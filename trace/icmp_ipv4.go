@@ -36,7 +36,7 @@ var psize = 52
 
 func (t *ICMPTracer) PrintFunc() {
 	defer t.wg.Done()
-	var ttl = t.Config.BeginHop - 1
+	ttl := t.Config.BeginHop - 1
 	for {
 		if t.AsyncPrinter != nil {
 			t.AsyncPrinter(&t.res)
@@ -58,7 +58,7 @@ func (t *ICMPTracer) PrintFunc() {
 	}
 }
 
-func (t *ICMPTracer) Execute() (*Result, error) {
+func (t *ICMPTracer) Execute(ctx context.Context) (*Result, error) {
 	t.inflightRequestRWLock.Lock()
 	t.inflightRequest = make(map[int]chan Hop)
 	t.inflightRequestRWLock.Unlock()
@@ -76,7 +76,7 @@ func (t *ICMPTracer) Execute() (*Result, error) {
 	defer t.icmpListen.Close()
 
 	var cancel context.CancelFunc
-	t.ctx, cancel = context.WithCancel(context.Background())
+	t.ctx, cancel = context.WithCancel(ctx)
 	defer cancel()
 	t.final = -1
 
@@ -168,7 +168,7 @@ func (t *ICMPTracer) listenICMP() {
 							t.handleICMPMessage(msg, 0, rm.Body.(*icmp.TimeExceeded).Data, int(ttl))
 						case ipv4.ICMPTypeEchoReply:
 							t.handleICMPMessage(msg, 1, rm.Body.(*icmp.Echo).Data, int(ttl))
-						//unreachable
+						// unreachable
 						case ipv4.ICMPTypeDestinationUnreachable:
 							t.handleICMPMessage(msg, 2, rm.Body.(*icmp.DstUnreach).Data, int(ttl))
 						default:
@@ -179,7 +179,6 @@ func (t *ICMPTracer) listenICMP() {
 			}
 		}
 	}
-
 }
 
 func (t *ICMPTracer) handleICMPMessage(msg ReceivedMessage, icmpType int8, data []byte, ttl int) {
@@ -204,8 +203,8 @@ func (t *ICMPTracer) handleICMPMessage(msg ReceivedMessage, icmpType int8, data 
 
 func gernerateID(ttl_int int) int {
 	const ID_FIXED_HEADER = "10"
-	var processID = fmt.Sprintf("%07b", os.Getpid()&0x7f) //取进程ID的前7位
-	var ttl = fmt.Sprintf("%06b", ttl_int)                //取TTL的后6位
+	processID := fmt.Sprintf("%07b", os.Getpid()&0x7f) // 取进程ID的前7位
+	ttl := fmt.Sprintf("%06b", ttl_int)                // 取TTL的后6位
 
 	var parity int
 	id := ID_FIXED_HEADER + processID + ttl
@@ -232,7 +231,7 @@ func reverseID(id string) (int64, int64, error) {
 	if err != nil {
 		return 0, 0, err
 	}
-	//process ID
+	// process ID
 	processID, _ := strconv.ParseInt(id[2:9], 2, 32)
 
 	parity := 0
@@ -261,17 +260,16 @@ func reverseID(id string) (int64, int64, error) {
 }
 
 func (t *ICMPTracer) send(ttl int) error {
-
 	defer t.wg.Done()
 	if t.final != -1 && ttl > t.final {
 		return nil
 	}
 
-	//id := gernerateID(ttl)
+	// id := gernerateID(ttl)
 	id := gernerateID(0)
 	// log.Println("发送的", id)
 
-	//data := []byte{byte(ttl)}
+	// data := []byte{byte(ttl)}
 	data := []byte{byte(0)}
 	data = append(data, bytes.Repeat([]byte{1}, t.Config.PktSize-5)...)
 	data = append(data, 0x00, 0x00, 0x4f, 0xff)
@@ -280,7 +278,7 @@ func (t *ICMPTracer) send(ttl int) error {
 		Type: ipv4.ICMPTypeEcho, Code: 0,
 		Body: &icmp.Echo{
 			ID: id,
-			//Data: []byte("HELLO-R-U-THERE"),
+			// Data: []byte("HELLO-R-U-THERE"),
 			Data: data,
 			Seq:  ttl,
 		},
@@ -311,7 +309,6 @@ func (t *ICMPTracer) send(ttl int) error {
 		if addr, ok := h.Address.(*net.IPAddr); ok && addr.IP.Equal(t.DestIP) {
 			t.finalLock.Lock()
 			if t.final == -1 || ttl < t.final {
-
 				t.final = ttl
 			}
 			t.finalLock.Unlock()

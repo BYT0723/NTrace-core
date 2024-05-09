@@ -32,7 +32,7 @@ type UDPTracer struct {
 	fetchLock sync.Mutex
 }
 
-func (t *UDPTracer) Execute() (*Result, error) {
+func (t *UDPTracer) Execute(ctx context.Context) (*Result, error) {
 	if len(t.res.Hops) > 0 {
 		return &t.res, ErrTracerouteExecuted
 	}
@@ -45,7 +45,7 @@ func (t *UDPTracer) Execute() (*Result, error) {
 	defer t.icmp.Close()
 
 	var cancel context.CancelFunc
-	t.ctx, cancel = context.WithCancel(context.Background())
+	t.ctx, cancel = context.WithCancel(ctx)
 	defer cancel()
 	t.inflightRequest = make(map[int]chan Hop)
 	t.final = -1
@@ -113,7 +113,6 @@ func (t *UDPTracer) listenICMP() {
 			}
 		}
 	}
-
 }
 
 func (t *UDPTracer) handleICMPMessage(msg ReceivedMessage, data []byte) {

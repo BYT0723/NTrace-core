@@ -35,7 +35,7 @@ type TCPTracerv6 struct {
 	fetchLock sync.Mutex
 }
 
-func (t *TCPTracerv6) Execute() (*Result, error) {
+func (t *TCPTracerv6) Execute(ctx context.Context) (*Result, error) {
 	if len(t.res.Hops) > 0 {
 		return &t.res, ErrTracerouteExecuted
 	}
@@ -54,7 +54,7 @@ func (t *TCPTracerv6) Execute() (*Result, error) {
 	defer t.icmp.Close()
 
 	var cancel context.CancelFunc
-	t.ctx, cancel = context.WithCancel(context.Background())
+	t.ctx, cancel = context.WithCancel(ctx)
 	defer cancel()
 	t.inflightRequest = make(map[int]chan Hop)
 	t.final = -1
@@ -89,7 +89,6 @@ func (t *TCPTracerv6) Execute() (*Result, error) {
 				time.Sleep(200 * time.Millisecond)
 			}
 		}
-
 	}()
 
 	if t.RealtimePrinter == nil {
@@ -124,11 +123,10 @@ func (t *TCPTracerv6) listenICMP() {
 			case ipv6.ICMPTypeDestinationUnreachable:
 				t.handleICMPMessage(msg)
 			default:
-				//log.Println("received icmp message of unknown type", rm.Type)
+				// log.Println("received icmp message of unknown type", rm.Type)
 			}
 		}
 	}
-
 }
 
 // @title    listenTCP
@@ -171,7 +169,7 @@ func (t *TCPTracerv6) listenTCP() {
 }
 
 func (t *TCPTracerv6) handleICMPMessage(msg ReceivedMessage) {
-	var sequenceNumber = binary.BigEndian.Uint32(msg.Msg[52:56])
+	sequenceNumber := binary.BigEndian.Uint32(msg.Msg[52:56])
 
 	t.inflightRequestLock.Lock()
 	defer t.inflightRequestLock.Unlock()

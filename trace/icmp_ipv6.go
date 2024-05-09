@@ -33,7 +33,7 @@ type ICMPTracerv6 struct {
 
 func (t *ICMPTracerv6) PrintFunc() {
 	defer t.wg.Done()
-	var ttl = t.Config.BeginHop - 1
+	ttl := t.Config.BeginHop - 1
 	for {
 		if t.AsyncPrinter != nil {
 			t.AsyncPrinter(&t.res)
@@ -56,7 +56,7 @@ func (t *ICMPTracerv6) PrintFunc() {
 	}
 }
 
-func (t *ICMPTracerv6) Execute() (*Result, error) {
+func (t *ICMPTracerv6) Execute(ctx context.Context) (*Result, error) {
 	t.inflightRequestRWLock.Lock()
 	t.inflightRequest = make(map[int]chan Hop)
 	t.inflightRequestRWLock.Unlock()
@@ -74,7 +74,7 @@ func (t *ICMPTracerv6) Execute() (*Result, error) {
 	defer t.icmpListen.Close()
 
 	var cancel context.CancelFunc
-	t.ctx, cancel = context.WithCancel(context.Background())
+	t.ctx, cancel = context.WithCancel(ctx)
 	defer cancel()
 	t.resCh = make(chan Hop)
 	t.final = -1
@@ -234,7 +234,6 @@ func (t *ICMPTracerv6) listenICMP() {
 			// }
 		}
 	}
-
 }
 
 func (t *ICMPTracerv6) handleICMPMessage(msg ReceivedMessage, icmpType int8, data []byte, ttl int) {
@@ -261,10 +260,10 @@ func (t *ICMPTracerv6) send(ttl int) error {
 	if t.final != -1 && ttl > t.final {
 		return nil
 	}
-	//id := gernerateID(ttl)
+	// id := gernerateID(ttl)
 	id := gernerateID(0)
 
-	//data := []byte{byte(ttl)}
+	// data := []byte{byte(ttl)}
 	data := []byte{byte(0)}
 	data = append(data, bytes.Repeat([]byte{1}, t.Config.PktSize-5)...)
 	data = append(data, 0x00, 0x00, 0x4f, 0xff)
@@ -273,7 +272,7 @@ func (t *ICMPTracerv6) send(ttl int) error {
 		Type: ipv6.ICMPTypeEchoRequest, Code: 0,
 		Body: &icmp.Echo{
 			ID: id,
-			//Data: []byte("HELLO-R-U-THERE"),
+			// Data: []byte("HELLO-R-U-THERE"),
 			Data: data,
 			Seq:  ttl,
 		},

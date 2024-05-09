@@ -1,6 +1,7 @@
 package trace
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net"
@@ -53,10 +54,18 @@ const (
 )
 
 type Tracer interface {
-	Execute() (*Result, error)
+	Execute(context.Context) (*Result, error)
 }
 
 func Traceroute(method Method, config Config) (*Result, error) {
+	return traceroute(context.Background(), method, config)
+}
+
+func TracerouteWithCtx(ctx context.Context, method Method, config Config) (*Result, error) {
+	return traceroute(ctx, method, config)
+}
+
+func traceroute(ctx context.Context, method Method, config Config) (*Result, error) {
 	var tracer Tracer
 
 	if config.MaxHops == 0 {
@@ -93,7 +102,7 @@ func Traceroute(method Method, config Config) (*Result, error) {
 	default:
 		return &Result{}, ErrInvalidMethod
 	}
-	result, err := tracer.Execute()
+	result, err := tracer.Execute(ctx)
 	if err != nil && errors.Is(err, syscall.EPERM) {
 		err = fmt.Errorf("%w, please run as root", err)
 	}
@@ -114,7 +123,6 @@ func (s *Result) add(hop Hop) {
 		s.Hops = append(s.Hops, make([]Hop, 0))
 	}
 	s.Hops[k] = append(s.Hops[k], hop)
-
 }
 
 func (s *Result) reduce(final int) {
@@ -136,7 +144,6 @@ type Hop struct {
 }
 
 func (h *Hop) fetchIPData(c Config) (err error) {
-
 	// DN42
 	if c.DN42 {
 		var ip string
@@ -183,7 +190,7 @@ func (h *Hop) fetchIPData(c Config) (err error) {
 				if c.Timeout < 2*time.Second {
 					timeout = 2 * time.Second
 				}
-				//h.Geo, err = c.IPGeoSource(h.Address.String(), timeout, c.Lang, c.Maptrace)
+				// h.Geo, err = c.IPGeoSource(h.Address.String(), timeout, c.Lang, c.Maptrace)
 				if cacheVal, ok := geoCache.Load(h.Address.String()); ok {
 					// 如果缓存中已有结果，直接使用
 					h.Geo = cacheVal.(*ipgeo.IPGeoData)
@@ -262,17 +269,17 @@ func extractMPLS(msg ReceivedMessage, data []byte) []string {
 		return nil
 	}
 	tmp = tmp[index+psize*2:]
-	//由于限制长度了
+	// 由于限制长度了
 	index1 := strings.Index(tmp, "00002000")
 	l := len(tmp[index1+4:])/8 - 2
-	//fmt.Printf("l:%d\n", l)
+	// fmt.Printf("l:%d\n", l)
 
 	if l < 1 {
 		return nil
 	}
-	//去掉扩展头和MPLS头
+	// 去掉扩展头和MPLS头
 	tmp = tmp[index1+4+8*2:]
-	//fmt.Print(tmp)
+	// fmt.Print(tmp)
 
 	var retStrList []string
 	for i := 0; i < l; i++ {
@@ -282,7 +289,7 @@ func extractMPLS(msg ReceivedMessage, data []byte) []string {
 		}
 
 		strSlice := fmt.Sprintf("%s", []byte(tmp[i*8+5:i*8+6]))
-		//fmt.Printf("\nstrSlice: %s\n", strSlice)
+		// fmt.Printf("\nstrSlice: %s\n", strSlice)
 
 		num, err := strconv.ParseUint(strSlice, 16, 64)
 		if err != nil {
@@ -290,7 +297,7 @@ func extractMPLS(msg ReceivedMessage, data []byte) []string {
 		}
 		binaryStr := fmt.Sprintf("%04s", strconv.FormatUint(num, 2))
 
-		//fmt.Printf("\nbinaryStr: %s\n", binaryStr)
+		// fmt.Printf("\nbinaryStr: %s\n", binaryStr)
 		tc, err := strconv.ParseInt(binaryStr[:3], 2, 32)
 		if err != nil {
 			return nil

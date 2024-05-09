@@ -35,7 +35,7 @@ type TCPTracer struct {
 	fetchLock sync.Mutex
 }
 
-func (t *TCPTracer) Execute() (*Result, error) {
+func (t *TCPTracer) Execute(ctx context.Context) (*Result, error) {
 	if len(t.res.Hops) > 0 {
 		return &t.res, ErrTracerouteExecuted
 	}
@@ -59,7 +59,7 @@ func (t *TCPTracer) Execute() (*Result, error) {
 	defer t.icmp.Close()
 
 	var cancel context.CancelFunc
-	t.ctx, cancel = context.WithCancel(context.Background())
+	t.ctx, cancel = context.WithCancel(ctx)
 	defer cancel()
 	t.inflightRequestLock.Lock()
 	t.inflightRequest = make(map[int]chan Hop)
@@ -97,7 +97,6 @@ func (t *TCPTracer) Execute() (*Result, error) {
 				time.Sleep(200 * time.Millisecond)
 			}
 		}
-
 	}()
 
 	// 如果是表格模式，则一次性并发请求
@@ -133,12 +132,11 @@ func (t *TCPTracer) listenICMP() {
 				case ipv4.ICMPTypeDestinationUnreachable:
 					t.handleICMPMessage(msg, rm.Body.(*icmp.DstUnreach).Data)
 				default:
-					//log.Println("received icmp message of unknown type", rm.Type)
+					// log.Println("received icmp message of unknown type", rm.Type)
 				}
 			}
 		}
 	}
-
 }
 
 // @title    listenTCP
@@ -195,7 +193,6 @@ func (t *TCPTracer) handleICMPMessage(msg ReceivedMessage, data []byte) {
 		Success: true,
 		Address: msg.Peer,
 	}
-
 }
 
 func (t *TCPTracer) send(ttl int) error {
