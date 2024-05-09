@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/nxtrace/NTrace-core/trace"
+	"github.com/BYT0723/NTrace-core/trace"
 )
 
 type HopInfo int

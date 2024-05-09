@@ -1,7 +1,7 @@
 package ipgeo
 
 import (
-	"github.com/nxtrace/NTrace-core/util"
+	"github.com/BYT0723/NTrace-core/util"
 	"io"
 	"net/http"
 	"strconv"

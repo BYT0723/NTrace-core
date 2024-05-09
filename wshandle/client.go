@@ -2,8 +2,8 @@ package wshandle
 
 import (
 	"crypto/tls"
-	"github.com/nxtrace/NTrace-core/pow"
-	"github.com/nxtrace/NTrace-core/util"
+	"github.com/BYT0723/NTrace-core/pow"
+	"github.com/BYT0723/NTrace-core/util"
 	"log"
 	"net"
 	"net/http"

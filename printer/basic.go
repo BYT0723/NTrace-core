@@ -2,9 +2,9 @@ package printer
 
 import (
 	"fmt"
-	"github.com/nxtrace/NTrace-core/config"
-	"github.com/nxtrace/NTrace-core/trace"
-	"github.com/nxtrace/NTrace-core/util"
+	"github.com/BYT0723/NTrace-core/config"
+	"github.com/BYT0723/NTrace-core/trace"
+	"github.com/BYT0723/NTrace-core/util"
 	"net"
 
 	"github.com/fatih/color"

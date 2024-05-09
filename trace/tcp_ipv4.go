@@ -10,7 +10,7 @@ import (
 
 	"github.com/google/gopacket"
 	"github.com/google/gopacket/layers"
-	"github.com/nxtrace/NTrace-core/util"
+	"github.com/BYT0723/NTrace-core/util"
 	"golang.org/x/net/context"
 	"golang.org/x/net/icmp"
 	"golang.org/x/net/ipv4"

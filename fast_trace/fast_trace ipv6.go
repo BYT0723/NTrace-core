@@ -2,12 +2,12 @@ package fastTrace
 
 import (
 	"fmt"
-	"github.com/nxtrace/NTrace-core/ipgeo"
-	"github.com/nxtrace/NTrace-core/printer"
-	"github.com/nxtrace/NTrace-core/trace"
-	"github.com/nxtrace/NTrace-core/tracelog"
-	"github.com/nxtrace/NTrace-core/util"
-	"github.com/nxtrace/NTrace-core/wshandle"
+	"github.com/BYT0723/NTrace-core/ipgeo"
+	"github.com/BYT0723/NTrace-core/printer"
+	"github.com/BYT0723/NTrace-core/trace"
+	"github.com/BYT0723/NTrace-core/tracelog"
+	"github.com/BYT0723/NTrace-core/util"
+	"github.com/BYT0723/NTrace-core/wshandle"
 	"log"
 	"os"
 	"os/signal"

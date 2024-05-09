@@ -4,7 +4,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/nxtrace/NTrace-core/dn42"
+	"github.com/BYT0723/NTrace-core/dn42"
 )
 
 func LtdCodeToCountryOrAreaName(Code string) string {

@@ -1,4 +1,4 @@
-module github.com/nxtrace/NTrace-core
+module github.com/BYT0723/NTrace-core
 
 go 1.22
 

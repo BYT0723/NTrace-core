@@ -16,7 +16,7 @@ import (
 	"golang.org/x/net/icmp"
 	"golang.org/x/net/ipv4"
 
-	"github.com/nxtrace/NTrace-core/trace/internal"
+	"github.com/BYT0723/NTrace-core/trace/internal"
 )
 
 type ICMPTracer struct {

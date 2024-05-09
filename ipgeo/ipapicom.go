@@ -2,7 +2,7 @@ package ipgeo
 
 import (
 	"errors"
-	"github.com/nxtrace/NTrace-core/util"
+	"github.com/BYT0723/NTrace-core/util"
 	"io"
 	"log"
 	"net/http"

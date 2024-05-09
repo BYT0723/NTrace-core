@@ -2,13 +2,13 @@ package printer
 
 import (
 	"fmt"
-	"github.com/nxtrace/NTrace-core/util"
+	"github.com/BYT0723/NTrace-core/util"
 	"net"
 	"strconv"
 	"strings"
 
 	"github.com/fatih/color"
-	"github.com/nxtrace/NTrace-core/trace"
+	"github.com/BYT0723/NTrace-core/trace"
 )
 
 func RealtimePrinter(res *trace.Result, ttl int) {

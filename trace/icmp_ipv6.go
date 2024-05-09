@@ -14,7 +14,7 @@ import (
 	"golang.org/x/net/icmp"
 	"golang.org/x/net/ipv6"
 
-	"github.com/nxtrace/NTrace-core/trace/internal"
+	"github.com/BYT0723/NTrace-core/trace/internal"
 )
 
 type ICMPTracerv6 struct {

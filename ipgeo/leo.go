@@ -7,7 +7,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/nxtrace/NTrace-core/wshandle"
+	"github.com/BYT0723/NTrace-core/wshandle"
 	"github.com/tidwall/gjson"
 )
 

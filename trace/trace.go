@@ -10,8 +10,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/nxtrace/NTrace-core/ipgeo"
-	"github.com/nxtrace/NTrace-core/util"
+	"github.com/BYT0723/NTrace-core/ipgeo"
+	"github.com/BYT0723/NTrace-core/util"
 )
 
 var (
