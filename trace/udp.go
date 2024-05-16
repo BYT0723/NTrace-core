@@ -147,7 +147,7 @@ func (t *UDPTracer) getUDPConn(try int) (net.IP, int, net.PacketConn) {
 	udpConn, err := net.ListenPacket("udp", ipString+":0")
 	if err != nil {
 		if try > 3 {
-			log.Fatal(err)
+			panic(err)
 		}
 		return t.getUDPConn(try + 1)
 	}

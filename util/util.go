@@ -47,7 +47,7 @@ func LookupAddr(addr string) ([]string, error) {
 func LocalIPPort(dstip net.IP) (net.IP, int) {
 	serverAddr, err := net.ResolveUDPAddr("udp", dstip.String()+":12345")
 	if err != nil {
-		log.Fatal(err)
+		panic(err)
 	}
 
 	// We don't actually connect to anything, but we can determine
@@ -64,7 +64,7 @@ func LocalIPPort(dstip net.IP) (net.IP, int) {
 func LocalIPPortv6(dstip net.IP) (net.IP, int) {
 	serverAddr, err := net.ResolveUDPAddr("udp", "["+dstip.String()+"]:12345")
 	if err != nil {
-		log.Fatal(err)
+		panic(err)
 	}
 
 	// We don't actually connect to anything, but we can determine

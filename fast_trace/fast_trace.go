@@ -3,19 +3,20 @@ package fastTrace
 import (
 	"bufio"
 	"fmt"
-	"github.com/fatih/color"
-	"github.com/BYT0723/NTrace-core/ipgeo"
-	"github.com/BYT0723/NTrace-core/printer"
-	"github.com/BYT0723/NTrace-core/trace"
-	"github.com/BYT0723/NTrace-core/tracelog"
-	"github.com/BYT0723/NTrace-core/util"
-	"github.com/BYT0723/NTrace-core/wshandle"
 	"log"
 	"net"
 	"os"
 	"os/signal"
 	"strings"
 	"time"
+
+	"github.com/BYT0723/NTrace-core/ipgeo"
+	"github.com/BYT0723/NTrace-core/printer"
+	"github.com/BYT0723/NTrace-core/trace"
+	"github.com/BYT0723/NTrace-core/tracelog"
+	"github.com/BYT0723/NTrace-core/util"
+	"github.com/BYT0723/NTrace-core/wshandle"
+	"github.com/fatih/color"
 )
 
 type FastTracer struct {
@@ -50,9 +51,9 @@ func (f *FastTracer) tracert(location string, ispCollection ISPCollection) {
 
 	ip, err := util.DomainLookUp(ispCollection.IP, "4", "", true)
 	if err != nil {
-		log.Fatal(err)
+		panic(err)
 	}
-	var conf = trace.Config{
+	conf := trace.Config{
 		BeginHop:         f.ParamsFastTrace.BeginHop,
 		DestIP:           ip,
 		DestPort:         80,
@@ -78,7 +79,7 @@ func (f *FastTracer) tracert(location string, ispCollection ISPCollection) {
 		defer func(fp *os.File) {
 			err := fp.Close()
 			if err != nil {
-				log.Fatal(err)
+				panic(err)
 			}
 		}(fp)
 
@@ -92,9 +93,8 @@ func (f *FastTracer) tracert(location string, ispCollection ISPCollection) {
 	}
 
 	_, err = trace.Traceroute(f.TracerouteMethod, conf)
-
 	if err != nil {
-		log.Fatal(err)
+		panic(err)
 	}
 	fmt.Println()
 }
@@ -227,7 +227,7 @@ func testFile(paramsFastTrace ParamsFastTrace, tm bool) {
 	defer func(file *os.File) {
 		err := file.Close()
 		if err != nil {
-			log.Fatal(err)
+			panic(err)
 		}
 	}(file)
 	var ipList []IpListElement
@@ -324,7 +324,7 @@ func testFile(paramsFastTrace ParamsFastTrace, tm bool) {
 			}
 		}
 
-		var conf = trace.Config{
+		conf := trace.Config{
 			BeginHop:         paramsFastTrace.BeginHop,
 			DestIP:           net.ParseIP(ip.Ip),
 			DestPort:         80,
@@ -354,7 +354,7 @@ func testFile(paramsFastTrace ParamsFastTrace, tm bool) {
 			conf.RealtimePrinter = tracelog.RealtimePrinter
 			err = fp.Close()
 			if err != nil {
-				log.Fatal(err)
+				panic(err)
 			}
 		} else {
 			conf.RealtimePrinter = printer.RealtimePrinter
@@ -362,11 +362,10 @@ func testFile(paramsFastTrace ParamsFastTrace, tm bool) {
 
 		_, err := trace.Traceroute(tracerouteMethod, conf)
 		if err != nil {
-			log.Fatalln(err)
+			panic(err)
 		}
 		fmt.Println()
 	}
-
 }
 
 func (f *FastTracer) testAll() {

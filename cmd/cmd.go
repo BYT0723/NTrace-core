@@ -3,8 +3,6 @@ package cmd
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/fatih/color"
-	"log"
 	"net"
 	"os"
 	"os/signal"
@@ -12,7 +10,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/akamensky/argparse"
+	"github.com/fatih/color"
+
 	"github.com/BYT0723/NTrace-core/config"
 	fastTrace "github.com/BYT0723/NTrace-core/fast_trace"
 	"github.com/BYT0723/NTrace-core/ipgeo"
@@ -23,6 +22,7 @@ import (
 	"github.com/BYT0723/NTrace-core/tracemap"
 	"github.com/BYT0723/NTrace-core/util"
 	"github.com/BYT0723/NTrace-core/wshandle"
+	"github.com/akamensky/argparse"
 	"github.com/syndtr/gocapability/capability"
 )
 
@@ -40,10 +40,14 @@ func Excute() {
 	numMeasurements := parser.Int("q", "queries", &argparse.Options{Default: 3, Help: "Set the number of probes per each hop"})
 	parallelRequests := parser.Int("", "parallel-requests", &argparse.Options{Default: 18, Help: "Set ParallelRequests number. It should be 1 when there is a multi-routing"})
 	maxHops := parser.Int("m", "max-hops", &argparse.Options{Default: 30, Help: "Set the max number of hops (max TTL to be reached)"})
-	dataOrigin := parser.Selector("d", "data-provider", []string{"Ip2region", "ip2region", "IP.SB", "ip.sb", "IPInfo", "ipinfo", "IPInsight", "ipinsight", "IPAPI.com", "ip-api.com", "IPInfoLocal", "ipinfolocal", "chunzhen", "LeoMoeAPI", "leomoeapi", "disable-geoip"}, &argparse.Options{Default: "LeoMoeAPI",
-		Help: "Choose IP Geograph Data Provider [IP.SB, IPInfo, IPInsight, IP-API.com, Ip2region, IPInfoLocal, CHUNZHEN, disable-geoip]"})
-	powProvider := parser.Selector("", "pow-provider", []string{"api.nxtrace.org", "sakura"}, &argparse.Options{Default: "api.nxtrace.org",
-		Help: "Choose PoW Provider [api.nxtrace.org, sakura] For China mainland users, please use sakura"})
+	dataOrigin := parser.Selector("d", "data-provider", []string{"Ip2region", "ip2region", "IP.SB", "ip.sb", "IPInfo", "ipinfo", "IPInsight", "ipinsight", "IPAPI.com", "ip-api.com", "IPInfoLocal", "ipinfolocal", "chunzhen", "LeoMoeAPI", "leomoeapi", "disable-geoip"}, &argparse.Options{
+		Default: "LeoMoeAPI",
+		Help:    "Choose IP Geograph Data Provider [IP.SB, IPInfo, IPInsight, IP-API.com, Ip2region, IPInfoLocal, CHUNZHEN, disable-geoip]",
+	})
+	powProvider := parser.Selector("", "pow-provider", []string{"api.nxtrace.org", "sakura"}, &argparse.Options{
+		Default: "api.nxtrace.org",
+		Help:    "Choose PoW Provider [api.nxtrace.org, sakura] For China mainland users, please use sakura",
+	})
 	noRdns := parser.Flag("n", "no-rdns", &argparse.Options{Help: "Do not resolve IP addresses to their domain names"})
 	alwaysRdns := parser.Flag("a", "always-rdns", &argparse.Options{Help: "Always resolve IP addresses to their domain names"})
 	routePath := parser.Flag("P", "route-path", &argparse.Options{Help: "Print traceroute hop path by ASN and location"})
@@ -60,16 +64,19 @@ func Excute() {
 	ver := parser.Flag("v", "version", &argparse.Options{Help: "Print version info and exit"})
 	srcAddr := parser.String("s", "source", &argparse.Options{Help: "Use source src_addr for outgoing packets"})
 	srcDev := parser.String("D", "dev", &argparse.Options{Help: "Use the following Network Devices as the source address in outgoing packets"})
-	//router := parser.Flag("R", "route", &argparse.Options{Help: "Show Routing Table [Provided By BGP.Tools]"})
+	// router := parser.Flag("R", "route", &argparse.Options{Help: "Show Routing Table [Provided By BGP.Tools]"})
 	packetInterval := parser.Int("z", "send-time", &argparse.Options{Default: 100, Help: "Set how many [milliseconds] between sending each packet.. Useful when some routers use rate-limit for ICMP messages"})
 	ttlInterval := parser.Int("i", "ttl-time", &argparse.Options{Default: 500, Help: "Set how many [milliseconds] between sending packets groups by TTL. Useful when some routers use rate-limit for ICMP messages"})
 	timeout := parser.Int("", "timeout", &argparse.Options{Default: 1000, Help: "The number of [milliseconds] to keep probe sockets open before giving up on the connection."})
 	packetSize := parser.Int("", "psize", &argparse.Options{Default: 52, Help: "Set the packet size (payload size)"})
 	str := parser.StringPositional(&argparse.Options{Help: "IP Address or domain name"})
 	dot := parser.Selector("", "dot-server", []string{"dnssb", "aliyun", "dnspod", "google", "cloudflare"}, &argparse.Options{
-		Help: "Use DoT Server for DNS Parse [dnssb, aliyun, dnspod, google, cloudflare]"})
-	lang := parser.Selector("g", "language", []string{"en", "cn"}, &argparse.Options{Default: "cn",
-		Help: "Choose the language for displaying [en, cn]"})
+		Help: "Use DoT Server for DNS Parse [dnssb, aliyun, dnspod, google, cloudflare]",
+	})
+	lang := parser.Selector("g", "language", []string{"en", "cn"}, &argparse.Options{
+		Default: "cn",
+		Help:    "Choose the language for displaying [en, cn]",
+	})
 	file := parser.String("", "file", &argparse.Options{Help: "Read IP Address or domain name from file"})
 	nocolor := parser.Flag("C", "nocolor", &argparse.Options{Help: "Disable Colorful Output"})
 
@@ -103,7 +110,7 @@ func Excute() {
 	}
 
 	if *fast_trace || *file != "" {
-		var paramsFastTrace = fastTrace.ParamsFastTrace{
+		paramsFastTrace := fastTrace.ParamsFastTrace{
 			SrcDev:         *srcDev,
 			SrcAddr:        *srcAddr,
 			BeginHop:       *beginHop,
@@ -255,7 +262,7 @@ func Excute() {
 	}
 
 	util.DestIP = ip.String()
-	var conf = trace.Config{
+	conf := trace.Config{
 		DN42:             *dn42,
 		SrcAddr:          *srcAddr,
 		BeginHop:         *beginHop,
@@ -317,9 +324,8 @@ func Excute() {
 	}
 
 	res, err := trace.Traceroute(m, conf)
-
 	if err != nil {
-		log.Fatalln(err)
+		panic(err)
 	}
 
 	if *tablePrint {
@@ -340,7 +346,7 @@ func Excute() {
 		(util.StringInSlice(strings.ToUpper(*dataOrigin), []string{"LEOMOEAPI", "IPINFO", "IPINFO", "IP-API.COM", "IPAPI.COM"})) {
 		url, err := tracemap.GetMapUrl(string(r))
 		if err != nil {
-			log.Fatalln(err)
+			panic(err)
 		}
 		res.TraceMapUrl = url
 		if !*jsonPrint {
@@ -358,7 +364,6 @@ func Excute() {
 }
 
 func capabilities_check() {
-
 	// Windows 判断放在前面，防止遇到一些奇奇怪怪的问题
 	if runtime.GOOS == "windows" {
 		// Running on Windows, skip checking capabilities

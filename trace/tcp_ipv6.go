@@ -8,9 +8,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/BYT0723/NTrace-core/util"
 	"github.com/google/gopacket"
 	"github.com/google/gopacket/layers"
-	"github.com/BYT0723/NTrace-core/util"
 	"golang.org/x/net/context"
 	"golang.org/x/net/icmp"
 	"golang.org/x/net/ipv6"
@@ -89,7 +89,6 @@ func (t *TCPTracerv6) Execute() (*Result, error) {
 				time.Sleep(200 * time.Millisecond)
 			}
 		}
-
 	}()
 
 	if t.RealtimePrinter == nil {
@@ -124,11 +123,10 @@ func (t *TCPTracerv6) listenICMP() {
 			case ipv6.ICMPTypeDestinationUnreachable:
 				t.handleICMPMessage(msg)
 			default:
-				//log.Println("received icmp message of unknown type", rm.Type)
+				// log.Println("received icmp message of unknown type", rm.Type)
 			}
 		}
 	}
-
 }
 
 // @title    listenTCP
@@ -171,7 +169,7 @@ func (t *TCPTracerv6) listenTCP() {
 }
 
 func (t *TCPTracerv6) handleICMPMessage(msg ReceivedMessage) {
-	var sequenceNumber = binary.BigEndian.Uint32(msg.Msg[52:56])
+	sequenceNumber := binary.BigEndian.Uint32(msg.Msg[52:56])
 
 	t.inflightRequestLock.Lock()
 	defer t.inflightRequestLock.Unlock()

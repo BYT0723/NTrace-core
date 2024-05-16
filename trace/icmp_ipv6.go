@@ -286,15 +286,15 @@ func (t *ICMPTracerv6) send(ttl int) error {
 
 	wb, err := icmpHeader.Marshal(nil)
 	if err != nil {
-		log.Fatal(err)
+		panic(err)
 	}
 
 	start := time.Now()
 	if _, err := t.icmpListen.WriteTo(wb, &net.IPAddr{IP: t.DestIP}); err != nil {
-		log.Fatal(err)
+		panic(err)
 	}
 	if err := t.icmpListen.SetReadDeadline(time.Now().Add(3 * time.Second)); err != nil {
-		log.Fatal(err)
+		panic(err)
 	}
 
 	select {

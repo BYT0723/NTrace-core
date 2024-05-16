@@ -43,7 +43,7 @@ func GetFastIP(domain string, port string, enableOutput bool) string {
 	}
 
 	if err != nil {
-		log.Fatal("DNS resolution failed, please check your system DNS Settings")
+		panic("DNS resolution failed, please check your system DNS Settings")
 	}
 
 	if len(ips) == 0 {

@@ -2,28 +2,28 @@ package fastTrace
 
 import (
 	"fmt"
+	"log"
+	"os"
+	"os/signal"
+
 	"github.com/BYT0723/NTrace-core/ipgeo"
 	"github.com/BYT0723/NTrace-core/printer"
 	"github.com/BYT0723/NTrace-core/trace"
 	"github.com/BYT0723/NTrace-core/tracelog"
 	"github.com/BYT0723/NTrace-core/util"
 	"github.com/BYT0723/NTrace-core/wshandle"
-	"log"
-	"os"
-	"os/signal"
 )
 
-//var pFastTracer ParamsFastTrace
-
+// var pFastTracer ParamsFastTrace
 func (f *FastTracer) tracert_v6(location string, ispCollection ISPCollection) {
 	fmt.Printf("%s『%s %s 』%s\n", printer.YELLOW_PREFIX, location, ispCollection.ISPName, printer.RESET_PREFIX)
 	fmt.Printf("traceroute to %s, %d hops max, %d byte packets\n", ispCollection.IPv6, f.ParamsFastTrace.MaxHops, f.ParamsFastTrace.PktSize)
 
 	ip, err := util.DomainLookUp(ispCollection.IPv6, "6", "", true)
 	if err != nil {
-		log.Fatal(err)
+		panic(err)
 	}
-	var conf = trace.Config{
+	conf := trace.Config{
 		BeginHop:         f.ParamsFastTrace.BeginHop,
 		DestIP:           ip,
 		DestPort:         80,
@@ -49,7 +49,7 @@ func (f *FastTracer) tracert_v6(location string, ispCollection ISPCollection) {
 		defer func(fp *os.File) {
 			err := fp.Close()
 			if err != nil {
-				log.Fatal(err)
+				panic(err)
 			}
 		}(fp)
 		log.SetOutput(fp)
@@ -62,9 +62,8 @@ func (f *FastTracer) tracert_v6(location string, ispCollection ISPCollection) {
 	}
 
 	_, err = trace.Traceroute(f.TracerouteMethod, conf)
-
 	if err != nil {
-		log.Fatal(err)
+		panic(err)
 	}
 
 	fmt.Println()

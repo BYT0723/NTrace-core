@@ -20,7 +20,7 @@ func RealtimePrinter(res *trace.Result, ttl int) {
 	defer func(f *os.File) {
 		err := f.Close()
 		if err != nil {
-			log.Fatal(err)
+			panic(err)
 		}
 	}(f)
 
