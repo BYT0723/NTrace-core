@@ -35,7 +35,6 @@ type UDPTracer struct {
 }
 
 func (t *UDPTracer) Execute() (*Result, error) {
-	exitCh := make(chan error, 1)
 	if len(t.res.Hops) > 0 {
 		return &t.res, ErrTracerouteExecuted
 	}
