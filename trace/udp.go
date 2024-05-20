@@ -1,9 +1,11 @@
 package trace
 
 import (
+	"fmt"
 	"log"
 	"net"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/BYT0723/NTrace-core/util"
@@ -33,6 +35,7 @@ type UDPTracer struct {
 }
 
 func (t *UDPTracer) Execute() (*Result, error) {
+	exitCh := make(chan error, 1)
 	if len(t.res.Hops) > 0 {
 		return &t.res, ErrTracerouteExecuted
 	}
@@ -52,6 +55,7 @@ func (t *UDPTracer) Execute() (*Result, error) {
 
 	go t.listenICMP()
 
+	var exit atomic.Value
 	t.sem = semaphore.NewWeighted(int64(t.ParallelRequests))
 	for ttl := 1; ttl <= t.MaxHops; ttl++ {
 		// 如果到达最终跳，则退出
@@ -63,12 +67,18 @@ func (t *UDPTracer) Execute() (*Result, error) {
 			go func() {
 				defer func() {
 					if err := recover(); err != nil {
-						log.Println("[ERROR]: ", err)
+						t.wg.Done()
+						exit.Store(fmt.Errorf("[Panic]: %v", err))
 						return
 					}
 				}()
 				t.send(ttl)
 			}()
+
+			if exit.Load() != nil {
+				return nil, exit.Load().(error)
+			}
+
 			<-time.After(time.Millisecond * time.Duration(t.Config.PacketInterval))
 		}
 		if t.RealtimePrinter != nil {
