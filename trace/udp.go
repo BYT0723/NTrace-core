@@ -6,9 +6,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/BYT0723/NTrace-core/util"
 	"github.com/google/gopacket"
 	"github.com/google/gopacket/layers"
-	"github.com/BYT0723/NTrace-core/util"
 	"golang.org/x/net/context"
 	"golang.org/x/net/icmp"
 	"golang.org/x/net/ipv4"
@@ -60,7 +60,15 @@ func (t *UDPTracer) Execute() (*Result, error) {
 		}
 		for i := 0; i < t.NumMeasurements; i++ {
 			t.wg.Add(1)
-			go t.send(ttl)
+			go func() {
+				defer func() {
+					if err := recover(); err != nil {
+						log.Println("[ERROR]: ", err)
+						return
+					}
+				}()
+				t.send(ttl)
+			}()
 			<-time.After(time.Millisecond * time.Duration(t.Config.PacketInterval))
 		}
 		if t.RealtimePrinter != nil {
@@ -113,7 +121,6 @@ func (t *UDPTracer) listenICMP() {
 			}
 		}
 	}
-
 }
 
 func (t *UDPTracer) handleICMPMessage(msg ReceivedMessage, data []byte) {
