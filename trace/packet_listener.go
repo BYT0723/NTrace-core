@@ -1,9 +1,10 @@
 package trace
 
 import (
-	"golang.org/x/net/context"
 	"net"
 	"time"
+
+	"golang.org/x/net/context"
 )
 
 type ReceivedMessage struct {
@@ -26,6 +27,7 @@ func NewPacketListener(conn net.PacketConn, ctx context.Context) *PacketListener
 }
 
 func (l *PacketListener) Start() {
+	defer close(l.Messages)
 	for {
 		select {
 		case <-l.ctx.Done():

@@ -89,8 +89,13 @@ func (t *UDPTracer) Execute() (*Result, error) {
 	go func() {
 		if t.AsyncPrinter != nil {
 			for {
-				t.AsyncPrinter(&t.res)
-				time.Sleep(200 * time.Millisecond)
+				select {
+				case <-t.ctx.Done():
+					return
+				default:
+					t.AsyncPrinter(&t.res)
+					time.Sleep(200 * time.Millisecond)
+				}
 			}
 		}
 	}()
