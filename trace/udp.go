@@ -66,7 +66,6 @@ func (t *UDPTracer) Execute() (*Result, error) {
 			go func() {
 				defer func() {
 					if err := recover(); err != nil {
-						t.wg.Done()
 						exit.Store(fmt.Errorf("[Panic]: %v", err))
 						return
 					}
