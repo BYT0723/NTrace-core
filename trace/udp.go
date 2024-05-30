@@ -44,7 +44,13 @@ func (t *UDPTracer) Execute() (*Result, error) {
 	if err != nil {
 		return &t.res, err
 	}
-	defer t.icmp.Close()
+
+	defer func() {
+		log.Println("icmp closed addr = ", t.icmp.LocalAddr())
+		if err := t.icmp.Close(); err != nil {
+			log.Println("icmp close:", err)
+		}
+	}()
 
 	var cancel context.CancelFunc
 	t.ctx, cancel = context.WithCancel(context.Background())
@@ -187,7 +193,12 @@ func (t *UDPTracer) send(ttl int) error {
 	}
 
 	srcIP, srcPort, udpConn := t.getUDPConn(0)
-	defer udpConn.Close()
+	defer func() {
+		log.Println("udpConn closed addr = ", udpConn.LocalAddr())
+		if err := udpConn.Close(); err != nil {
+			log.Println("udpConn closed error: ", err)
+		}
+	}()
 
 	var payload []byte
 	if t.Quic {
