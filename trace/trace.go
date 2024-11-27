@@ -154,7 +154,7 @@ func (h *Hop) fetchIPData(c Config) (err error) {
 	// c.AlwaysWaitRDNS = true
 
 	// Initialize a rDNS Channel
-	rDNSChan := make(chan []string)
+	rDNSChan := make(chan []string, 1)
 	fetchDoneChan := make(chan bool)
 
 	if c.RDns && h.Hostname == "" {
@@ -168,6 +168,7 @@ func (h *Hop) fetchIPData(c Config) (err error) {
 				// One PTR Record is found
 				rDNSChan <- r
 			}
+			close(rDNSChan)
 		}()
 	}
 
