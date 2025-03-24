@@ -158,8 +158,8 @@ func (t *ICMPTracer) listenICMP() {
 			}
 			ttl := int64(binary.BigEndian.Uint16(msg.Msg[34:36]))
 			packet_id := strconv.FormatInt(int64(binary.BigEndian.Uint16(msg.Msg[32:34])), 2)
-			if process_id, tracerId, err := reverseID(packet_id); err == nil {
-				if process_id == int64(os.Getpid()&0x0f) && tracerId == int64(t.id&0x1ff) {
+			if process_id, tracerId, _, err := reverseID(packet_id); err == nil {
+				if process_id == int64(os.Getpid()&0x03) && tracerId == int64(t.id&0xff) {
 					dstip := net.IP(msg.Msg[24:28])
 					if dstip.Equal(t.DestIP) || dstip.Equal(net.IPv4zero) {
 						// 匹配再继续解析包，否则直接丢弃
@@ -207,13 +207,14 @@ func (t *ICMPTracer) handleICMPMessage(msg ReceivedMessage, icmpType int8, data 
 	}
 }
 
-func gernerateID(tracerId uint32) int {
+func gernerateID(tracerId uint32, ttl_int int) int {
 	const ID_FIXED_HEADER = "10"
-	processID := fmt.Sprintf("%04b", os.Getpid()&0x0f) // 取进程ID的前7位
-	tracer := fmt.Sprintf("%09b", tracerId&0x1ff)      // tracerId
+	processID := fmt.Sprintf("%02b", os.Getpid()&0x03) // 取进程ID的前4位
+	tracer := fmt.Sprintf("%06b", tracerId&0x3f)       // tracerId
+	ttl := fmt.Sprintf("%05b", ttl_int&0x1f)           // ttl
 
 	var parity int
-	id := ID_FIXED_HEADER + processID + tracer
+	id := ID_FIXED_HEADER + processID + tracer + ttl
 	for _, c := range id {
 		if c == '1' {
 			parity++
@@ -229,20 +230,25 @@ func gernerateID(tracerId uint32) int {
 	return int(res)
 }
 
-func reverseID(id string) (processId, tracerId int64, err error) {
-	if len(id) < 32 {
+func reverseID(id string) (processId, tracerId, ttl int64, err error) {
+	if len(id) < 16 {
 		err = errors.New("invalid icmp pkt id")
 		return
 	}
-	tracerId, err = strconv.ParseInt(id[9:15], 2, 32)
+	// process ID
+	processId, _ = strconv.ParseInt(id[2:4], 2, 32)
+
+	tracerId, err = strconv.ParseInt(id[4:10], 2, 32)
 	if err != nil {
+		err = errors.New("invalid icmp tracerId")
 		return
 	}
-	// process ID
-	processId, _ = strconv.ParseInt(id[2:9], 2, 32)
 
-	// tracer ID
-	tracerId, _ = strconv.ParseInt(id[15:31], 2, 32)
+	ttl, err = strconv.ParseInt(id[10:15], 2, 32)
+	if err != nil {
+		err = errors.New("invalid icmp ttl")
+		return
+	}
 
 	parity := 0
 	for i := 0; i < len(id)-1; i++ {
@@ -275,7 +281,7 @@ func (t *ICMPTracer) send(ttl int) error {
 		return nil
 	}
 
-	id := gernerateID(t.id)
+	id := gernerateID(t.id, ttl)
 	// log.Println("发送的", id)
 
 	data := []byte{byte(ttl)}
