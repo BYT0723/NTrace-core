@@ -261,11 +261,9 @@ func (t *ICMPTracerv6) send(ttl int) error {
 	if t.final != -1 && ttl > t.final {
 		return nil
 	}
-	//id := gernerateID(ttl)
-	id := gernerateID(0)
+	id := gernerateID(ttl)
 
-	//data := []byte{byte(ttl)}
-	data := []byte{byte(0)}
+	data := []byte{byte(ttl)}
 	data = append(data, bytes.Repeat([]byte{1}, t.Config.PktSize-5)...)
 	data = append(data, 0x00, 0x00, 0x4f, 0xff)
 

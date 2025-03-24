@@ -10,6 +10,7 @@ import (
 	"os"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"golang.org/x/net/context"
@@ -32,7 +33,10 @@ type ICMPTracer struct {
 	fetchLock             sync.Mutex
 }
 
-var psize = 52
+var (
+	psize     = 52
+	idCounter uint32
+)
 
 func (t *ICMPTracer) PrintFunc() {
 	defer t.wg.Done()
@@ -205,9 +209,10 @@ func gernerateID(ttl_int int) int {
 	const ID_FIXED_HEADER = "10"
 	processID := fmt.Sprintf("%07b", os.Getpid()&0x7f) // 取进程ID的前7位
 	ttl := fmt.Sprintf("%06b", ttl_int)                // 取TTL的后6位
+	counter := fmt.Sprintf("%016b", atomic.AddUint32(&idCounter, 1))
 
 	var parity int
-	id := ID_FIXED_HEADER + processID + ttl
+	id := ID_FIXED_HEADER + processID + ttl + counter
 	for _, c := range id {
 		if c == '1' {
 			parity++
@@ -265,12 +270,10 @@ func (t *ICMPTracer) send(ttl int) error {
 		return nil
 	}
 
-	// id := gernerateID(ttl)
-	id := gernerateID(0)
+	id := gernerateID(ttl)
 	// log.Println("发送的", id)
 
-	// data := []byte{byte(ttl)}
-	data := []byte{byte(0)}
+	data := []byte{byte(ttl)}
 	data = append(data, bytes.Repeat([]byte{1}, t.Config.PktSize-5)...)
 	data = append(data, 0x00, 0x00, 0x4f, 0xff)
 
