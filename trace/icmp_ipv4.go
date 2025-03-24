@@ -22,16 +22,15 @@ import (
 
 type ICMPTracer struct {
 	Config
-	wg                    sync.WaitGroup
-	res                   Result
-	ctx                   context.Context
-	inflightRequest       map[int]chan Hop
-	inflightRequestRWLock sync.RWMutex
-	icmpListen            net.PacketConn
-	final                 int
-	finalLock             sync.Mutex
-	fetchLock             sync.Mutex
-	id                    uint32
+	wg              sync.WaitGroup
+	res             Result
+	ctx             context.Context
+	inflightRequest sync.Map
+	icmpListen      net.PacketConn
+	final           int
+	finalLock       sync.Mutex
+	fetchLock       sync.Mutex
+	id              uint32
 }
 
 var idCounter uint32
@@ -62,9 +61,6 @@ func (t *ICMPTracer) PrintFunc() {
 
 func (t *ICMPTracer) Execute() (*Result, error) {
 	t.id = atomic.AddUint32(&idCounter, 1)
-	t.inflightRequestRWLock.Lock()
-	t.inflightRequest = make(map[int]chan Hop)
-	t.inflightRequestRWLock.Unlock()
 
 	if len(t.res.Hops) > 0 {
 		return &t.res, ErrTracerouteExecuted
@@ -87,9 +83,7 @@ func (t *ICMPTracer) Execute() (*Result, error) {
 	t.wg.Add(1)
 	go t.PrintFunc()
 	for ttl := t.BeginHop; ttl <= t.MaxHops; ttl++ {
-		t.inflightRequestRWLock.Lock()
-		t.inflightRequest[ttl] = make(chan Hop, t.NumMeasurements)
-		t.inflightRequestRWLock.Unlock()
+		t.inflightRequest.Store(ttl, make(chan Hop, t.NumMeasurements))
 		if t.final != -1 && ttl > t.final {
 			break
 		}
@@ -100,7 +94,6 @@ func (t *ICMPTracer) Execute() (*Result, error) {
 		}
 		<-time.After(time.Millisecond * time.Duration(t.Config.TTLInterval))
 	}
-
 	t.wg.Wait()
 	t.res.reduce(t.final)
 	if t.final != -1 {
@@ -190,15 +183,15 @@ func (t *ICMPTracer) handleICMPMessage(msg ReceivedMessage, icmpType int8, data 
 		}
 	}
 
-	t.inflightRequestRWLock.RLock()
-	defer t.inflightRequestRWLock.RUnlock()
-
 	mpls := extractMPLS(msg, data, t.Config.PktSize)
-	if _, ok := t.inflightRequest[ttl]; ok {
-		t.inflightRequest[ttl] <- Hop{
-			Success: true,
-			Address: msg.Peer,
-			MPLS:    mpls,
+
+	if v, ok := t.inflightRequest.Load(ttl); ok && v != nil {
+		if ch, ok := v.(chan Hop); ok {
+			ch <- Hop{
+				Success: true,
+				Address: msg.Peer,
+				MPLS:    mpls,
+			}
 		}
 	}
 }
@@ -308,10 +301,11 @@ func (t *ICMPTracer) send(ttl int) error {
 	if err := t.icmpListen.SetReadDeadline(time.Now().Add(3 * time.Second)); err != nil {
 		panic(err)
 	}
+	value, _ := t.inflightRequest.Load(ttl)
 	select {
 	case <-t.ctx.Done():
 		return nil
-	case h := <-t.inflightRequest[ttl]:
+	case h := <-value.(chan Hop):
 		rtt := time.Since(start)
 		if t.final != -1 && ttl > t.final {
 			return nil
