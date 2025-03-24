@@ -176,7 +176,7 @@ func (t *ICMPTracerv6) listenICMP() {
 			}
 			ttl := int64(binary.BigEndian.Uint16(msg.Msg[54:56]))
 			packet_id := strconv.FormatInt(int64(binary.BigEndian.Uint16(msg.Msg[52:54])), 2)
-			if process_id, tracerId, err := reverseID(packet_id); err == nil {
+			if process_id, tracerId, _, err := reverseID(packet_id); err == nil {
 				if process_id == int64(os.Getpid()&0x0f) && tracerId == int64(t.id&0x1ff) {
 					dstip := net.IP(msg.Msg[32:48])
 					// 无效包本地环回包
@@ -263,7 +263,7 @@ func (t *ICMPTracerv6) send(ttl int) error {
 	if t.final != -1 && ttl > t.final {
 		return nil
 	}
-	id := gernerateID(t.id)
+	id := gernerateID(t.id, ttl)
 
 	data := []byte{byte(ttl)}
 	data = append(data, bytes.Repeat([]byte{1}, t.Config.PktSize-5)...)
