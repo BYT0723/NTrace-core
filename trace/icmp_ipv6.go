@@ -8,6 +8,7 @@ import (
 	"os"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"golang.org/x/net/context"
@@ -29,11 +30,12 @@ type ICMPTracerv6 struct {
 	final                 int
 	finalLock             sync.Mutex
 	fetchLock             sync.Mutex
+	id                    uint32
 }
 
 func (t *ICMPTracerv6) PrintFunc() {
 	defer t.wg.Done()
-	var ttl = t.Config.BeginHop - 1
+	ttl := t.Config.BeginHop - 1
 	for {
 		if t.AsyncPrinter != nil {
 			t.AsyncPrinter(&t.res)
@@ -57,6 +59,7 @@ func (t *ICMPTracerv6) PrintFunc() {
 }
 
 func (t *ICMPTracerv6) Execute() (*Result, error) {
+	t.id = atomic.AddUint32(&idCounter, 1)
 	t.inflightRequestRWLock.Lock()
 	t.inflightRequest = make(map[int]chan Hop)
 	t.inflightRequestRWLock.Unlock()
@@ -173,8 +176,8 @@ func (t *ICMPTracerv6) listenICMP() {
 			}
 			ttl := int64(binary.BigEndian.Uint16(msg.Msg[54:56]))
 			packet_id := strconv.FormatInt(int64(binary.BigEndian.Uint16(msg.Msg[52:54])), 2)
-			if process_id, _, err := reverseID(packet_id); err == nil {
-				if process_id == int64(os.Getpid()&0x7f) {
+			if process_id, tracerId, err := reverseID(packet_id); err == nil {
+				if process_id == int64(os.Getpid()&0x0f) && tracerId == int64(t.id&0x1ff) {
 					dstip := net.IP(msg.Msg[32:48])
 					// 无效包本地环回包
 					if dstip.String() == "::" {
@@ -234,7 +237,6 @@ func (t *ICMPTracerv6) listenICMP() {
 			// }
 		}
 	}
-
 }
 
 func (t *ICMPTracerv6) handleICMPMessage(msg ReceivedMessage, icmpType int8, data []byte, ttl int) {
@@ -261,7 +263,7 @@ func (t *ICMPTracerv6) send(ttl int) error {
 	if t.final != -1 && ttl > t.final {
 		return nil
 	}
-	id := gernerateID(ttl)
+	id := gernerateID(t.id)
 
 	data := []byte{byte(ttl)}
 	data = append(data, bytes.Repeat([]byte{1}, t.Config.PktSize-5)...)
@@ -271,7 +273,7 @@ func (t *ICMPTracerv6) send(ttl int) error {
 		Type: ipv6.ICMPTypeEchoRequest, Code: 0,
 		Body: &icmp.Echo{
 			ID: id,
-			//Data: []byte("HELLO-R-U-THERE"),
+			// Data: []byte("HELLO-R-U-THERE"),
 			Data: data,
 			Seq:  ttl,
 		},

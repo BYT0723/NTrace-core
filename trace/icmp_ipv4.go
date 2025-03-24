@@ -31,6 +31,7 @@ type ICMPTracer struct {
 	final                 int
 	finalLock             sync.Mutex
 	fetchLock             sync.Mutex
+	id                    uint32
 }
 
 var (
@@ -63,6 +64,7 @@ func (t *ICMPTracer) PrintFunc() {
 }
 
 func (t *ICMPTracer) Execute() (*Result, error) {
+	t.id = atomic.AddUint32(&idCounter, 1)
 	t.inflightRequestRWLock.Lock()
 	t.inflightRequest = make(map[int]chan Hop)
 	t.inflightRequestRWLock.Unlock()
@@ -156,8 +158,8 @@ func (t *ICMPTracer) listenICMP() {
 			}
 			ttl := int64(binary.BigEndian.Uint16(msg.Msg[34:36]))
 			packet_id := strconv.FormatInt(int64(binary.BigEndian.Uint16(msg.Msg[32:34])), 2)
-			if process_id, _, err := reverseID(packet_id); err == nil {
-				if process_id == int64(os.Getpid()&0x7f) {
+			if process_id, tracerId, err := reverseID(packet_id); err == nil {
+				if process_id == int64(os.Getpid()&0x0f) && tracerId == int64(t.id&0x1ff) {
 					dstip := net.IP(msg.Msg[24:28])
 					if dstip.Equal(t.DestIP) || dstip.Equal(net.IPv4zero) {
 						// 匹配再继续解析包，否则直接丢弃
@@ -205,14 +207,13 @@ func (t *ICMPTracer) handleICMPMessage(msg ReceivedMessage, icmpType int8, data 
 	}
 }
 
-func gernerateID(ttl_int int) int {
+func gernerateID(tracerId uint32) int {
 	const ID_FIXED_HEADER = "10"
-	processID := fmt.Sprintf("%07b", os.Getpid()&0x7f) // 取进程ID的前7位
-	ttl := fmt.Sprintf("%06b", ttl_int)                // 取TTL的后6位
-	counter := fmt.Sprintf("%016b", atomic.AddUint32(&idCounter, 1))
+	processID := fmt.Sprintf("%04b", os.Getpid()&0x0f) // 取进程ID的前7位
+	tracer := fmt.Sprintf("%09b", tracerId&0x1ff)      // tracerId
 
 	var parity int
-	id := ID_FIXED_HEADER + processID + ttl + counter
+	id := ID_FIXED_HEADER + processID + tracer
 	for _, c := range id {
 		if c == '1' {
 			parity++
@@ -228,16 +229,20 @@ func gernerateID(ttl_int int) int {
 	return int(res)
 }
 
-func reverseID(id string) (int64, int64, error) {
-	if len(id) < 16 {
-		return 0, 0, errors.New("err")
+func reverseID(id string) (processId, tracerId int64, err error) {
+	if len(id) < 32 {
+		err = errors.New("invalid icmp pkt id")
+		return
 	}
-	ttl, err := strconv.ParseInt(id[9:15], 2, 32)
+	tracerId, err = strconv.ParseInt(id[9:15], 2, 32)
 	if err != nil {
-		return 0, 0, err
+		return
 	}
 	// process ID
-	processID, _ := strconv.ParseInt(id[2:9], 2, 32)
+	processId, _ = strconv.ParseInt(id[2:9], 2, 32)
+
+	// tracer ID
+	tracerId, _ = strconv.ParseInt(id[15:31], 2, 32)
 
 	parity := 0
 	for i := 0; i < len(id)-1; i++ {
@@ -251,17 +256,17 @@ func reverseID(id string) (int64, int64, error) {
 			// fmt.Println("Parity check passed.")
 		} else {
 			// fmt.Println("Parity check failed.")
-			return 0, 0, errors.New("err")
+			err = errors.New("Parity check failed.")
 		}
 	} else {
 		if id[len(id)-1] == '1' {
 			// fmt.Println("Parity check passed.")
 		} else {
 			// fmt.Println("Parity check failed.")
-			return 0, 0, errors.New("err")
+			err = errors.New("Parity check failed.")
 		}
 	}
-	return processID, ttl, nil
+	return
 }
 
 func (t *ICMPTracer) send(ttl int) error {
@@ -270,7 +275,7 @@ func (t *ICMPTracer) send(ttl int) error {
 		return nil
 	}
 
-	id := gernerateID(ttl)
+	id := gernerateID(t.id)
 	// log.Println("发送的", id)
 
 	data := []byte{byte(ttl)}
