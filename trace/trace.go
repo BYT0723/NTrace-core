@@ -236,7 +236,7 @@ func (h *Hop) fetchIPData(c Config) (err error) {
 	return
 }
 
-func extractMPLS(msg ReceivedMessage, data []byte) []string {
+func extractMPLS(msg ReceivedMessage, data []byte, psize int) []string {
 	if util.DisableMPLS != "" {
 		return nil
 	}

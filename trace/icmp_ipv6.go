@@ -143,7 +143,6 @@ func (t *ICMPTracerv6) Execute() (*Result, error) {
 
 func (t *ICMPTracerv6) listenICMP() {
 	lc := NewPacketListener(t.icmpListen, t.ctx)
-	psize = t.Config.PktSize
 	go lc.Start()
 	for {
 		select {
@@ -248,7 +247,7 @@ func (t *ICMPTracerv6) handleICMPMessage(msg ReceivedMessage, icmpType int8, dat
 	t.inflightRequestRWLock.RLock()
 	defer t.inflightRequestRWLock.RUnlock()
 
-	mpls := extractMPLS(msg, data)
+	mpls := extractMPLS(msg, data, t.Config.PktSize)
 	if _, ok := t.inflightRequest[ttl]; ok {
 		t.inflightRequest[ttl] <- Hop{
 			Success: true,

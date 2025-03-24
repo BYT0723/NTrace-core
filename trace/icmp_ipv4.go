@@ -34,10 +34,7 @@ type ICMPTracer struct {
 	id                    uint32
 }
 
-var (
-	psize     = 52
-	idCounter uint32
-)
+var idCounter uint32
 
 func (t *ICMPTracer) PrintFunc() {
 	defer t.wg.Done()
@@ -129,7 +126,6 @@ func (t *ICMPTracer) Execute() (*Result, error) {
 
 func (t *ICMPTracer) listenICMP() {
 	lc := NewPacketListener(t.icmpListen, t.ctx)
-	psize = t.Config.PktSize
 	go lc.Start()
 	for {
 		select {
@@ -197,7 +193,7 @@ func (t *ICMPTracer) handleICMPMessage(msg ReceivedMessage, icmpType int8, data 
 	t.inflightRequestRWLock.RLock()
 	defer t.inflightRequestRWLock.RUnlock()
 
-	mpls := extractMPLS(msg, data)
+	mpls := extractMPLS(msg, data, t.Config.PktSize)
 	if _, ok := t.inflightRequest[ttl]; ok {
 		t.inflightRequest[ttl] <- Hop{
 			Success: true,
