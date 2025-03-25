@@ -33,7 +33,10 @@ type ICMPTracer struct {
 	id              uint32
 }
 
-var idCounter uint32
+var (
+	idCounter uint32
+	id2tracer sync.Map // uint32 -> *ICMPTracer
+)
 
 func (t *ICMPTracer) PrintFunc() {
 	defer t.wg.Done()
@@ -61,6 +64,8 @@ func (t *ICMPTracer) PrintFunc() {
 
 func (t *ICMPTracer) Execute() (*Result, error) {
 	t.id = atomic.AddUint32(&idCounter, 1)
+	id2tracer.Store(int64(t.id&0xff), t)
+	defer id2tracer.Delete(t.id & 0xff)
 
 	if len(t.res.Hops) > 0 {
 		return &t.res, ErrTracerouteExecuted
@@ -83,7 +88,7 @@ func (t *ICMPTracer) Execute() (*Result, error) {
 	t.wg.Add(1)
 	go t.PrintFunc()
 	for ttl := t.BeginHop; ttl <= t.MaxHops; ttl++ {
-		t.inflightRequest.Store(ttl, make(chan Hop, t.NumMeasurements))
+		t.inflightRequest.Store(ttl, make(chan *Hop, t.NumMeasurements*10))
 		if t.final != -1 && ttl > t.final {
 			break
 		}
@@ -128,48 +133,52 @@ func (t *ICMPTracer) listenICMP() {
 			if msg.N == nil {
 				continue
 			}
-			// log.Println(msg.Msg)
+
+			var (
+				packet_id string
+				ttl       int64
+				dstip     net.IP
+			)
+
 			if msg.Msg[0] == 0 {
+				packet_id = strconv.FormatInt(int64(binary.BigEndian.Uint16(msg.Msg[4:6])), 2)
+				ttl = int64(binary.BigEndian.Uint16(msg.Msg[6:8]))
+				dstip = net.ParseIP(msg.Peer.String())
+			} else {
+				packet_id = strconv.FormatInt(int64(binary.BigEndian.Uint16(msg.Msg[32:34])), 2)
+				ttl = int64(binary.BigEndian.Uint16(msg.Msg[34:36]))
+				dstip = net.IP(msg.Msg[24:28])
+			}
+
+			process_id, tracerId, _, err := reverseID(packet_id)
+			if err != nil || process_id != int64(os.Getpid()&0x03) {
+				continue
+			}
+
+			value, ok := id2tracer.Load(tracerId)
+			if !ok {
+				continue
+			}
+			rt := value.(*ICMPTracer) // real tracer
+
+			if dstip.Equal(rt.DestIP) || dstip.Equal(net.IPv4zero) {
+				// 匹配再继续解析包，否则直接丢弃
 				rm, err := icmp.ParseMessage(1, msg.Msg[:*msg.N])
 				if err != nil {
 					log.Println(err)
 					continue
 				}
-				echoReply := rm.Body.(*icmp.Echo)
-				ttl := echoReply.Seq // This is the TTL value
-				if ttl > 100 {
-					continue
-				}
-				if msg.Peer.String() == t.DestIP.String() {
-					t.handleICMPMessage(msg, 1, rm.Body.(*icmp.Echo).Data, ttl)
-				}
-				continue
-			}
-			ttl := int64(binary.BigEndian.Uint16(msg.Msg[34:36]))
-			packet_id := strconv.FormatInt(int64(binary.BigEndian.Uint16(msg.Msg[32:34])), 2)
-			if process_id, tracerId, _, err := reverseID(packet_id); err == nil {
-				if process_id == int64(os.Getpid()&0x03) && tracerId == int64(t.id&0xff) {
-					dstip := net.IP(msg.Msg[24:28])
-					if dstip.Equal(t.DestIP) || dstip.Equal(net.IPv4zero) {
-						// 匹配再继续解析包，否则直接丢弃
-						rm, err := icmp.ParseMessage(1, msg.Msg[:*msg.N])
-						if err != nil {
-							log.Println(err)
-							continue
-						}
 
-						switch rm.Type {
-						case ipv4.ICMPTypeTimeExceeded:
-							t.handleICMPMessage(msg, 0, rm.Body.(*icmp.TimeExceeded).Data, int(ttl))
-						case ipv4.ICMPTypeEchoReply:
-							t.handleICMPMessage(msg, 1, rm.Body.(*icmp.Echo).Data, int(ttl))
-						// unreachable
-						case ipv4.ICMPTypeDestinationUnreachable:
-							t.handleICMPMessage(msg, 2, rm.Body.(*icmp.DstUnreach).Data, int(ttl))
-						default:
-							// log.Println("received icmp message of unknown type", rm.Type)
-						}
-					}
+				switch rm.Type {
+				case ipv4.ICMPTypeTimeExceeded:
+					rt.handleICMPMessage(msg, 0, rm.Body.(*icmp.TimeExceeded).Data, int(ttl))
+				case ipv4.ICMPTypeEchoReply:
+					rt.handleICMPMessage(msg, 1, rm.Body.(*icmp.Echo).Data, int(ttl))
+				// unreachable
+				case ipv4.ICMPTypeDestinationUnreachable:
+					rt.handleICMPMessage(msg, 2, rm.Body.(*icmp.DstUnreach).Data, int(ttl))
+				default:
+					// log.Println("received icmp message of unknown type", rm.Type)
 				}
 			}
 		}
@@ -186,8 +195,8 @@ func (t *ICMPTracer) handleICMPMessage(msg ReceivedMessage, icmpType int8, data 
 	mpls := extractMPLS(msg, data, t.Config.PktSize)
 
 	if v, ok := t.inflightRequest.Load(ttl); ok && v != nil {
-		if ch, ok := v.(chan Hop); ok {
-			ch <- Hop{
+		if ch, ok := v.(chan *Hop); ok {
+			ch <- &Hop{
 				Success: true,
 				Address: msg.Peer,
 				MPLS:    mpls,
@@ -305,7 +314,7 @@ func (t *ICMPTracer) send(ttl int) error {
 	select {
 	case <-t.ctx.Done():
 		return nil
-	case h := <-value.(chan Hop):
+	case h := <-value.(chan *Hop):
 		rtt := time.Since(start)
 		if t.final != -1 && ttl > t.final {
 			return nil
@@ -331,7 +340,9 @@ func (t *ICMPTracer) send(ttl int) error {
 		defer t.fetchLock.Unlock()
 		h.fetchIPData(t.Config)
 
-		t.res.add(h)
+		fmt.Printf("h: %v\n", h)
+
+		t.res.add(*h)
 	case <-time.After(t.Timeout):
 		if t.final != -1 && ttl > t.final {
 			return nil
