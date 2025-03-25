@@ -65,7 +65,7 @@ func (t *ICMPTracer) PrintFunc() {
 func (t *ICMPTracer) Execute() (*Result, error) {
 	t.id = atomic.AddUint32(&idCounter, 1)
 	id2tracer.Store(int64(t.id&0xff), t)
-	defer id2tracer.Delete(t.id & 0xff)
+	defer id2tracer.Delete(int64(t.id & 0xff))
 
 	if len(t.res.Hops) > 0 {
 		return &t.res, ErrTracerouteExecuted
