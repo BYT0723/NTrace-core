@@ -3,7 +3,6 @@ package trace
 import (
 	"bytes"
 	"encoding/binary"
-	"fmt"
 	"log"
 	"net"
 	"os"
@@ -289,8 +288,6 @@ func (t *ICMPTracer) send(ttl int) error {
 		t.fetchLock.Lock()
 		defer t.fetchLock.Unlock()
 		h.fetchIPData(t.Config)
-
-		fmt.Printf("h: %v\n", h)
 
 		t.res.add(h)
 	case <-time.After(t.Timeout):
