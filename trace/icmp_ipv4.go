@@ -340,8 +340,6 @@ func (t *ICMPTracer) send(ttl int) error {
 		defer t.fetchLock.Unlock()
 		h.fetchIPData(t.Config)
 
-		fmt.Printf("h: %v\n", h)
-
 		t.res.add(*h)
 	case <-time.After(t.Timeout):
 		if t.final != -1 && ttl > t.final {
