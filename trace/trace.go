@@ -44,6 +44,7 @@ type Config struct {
 	PktSize          int
 	Maptrace         bool
 	Collector        int // 0, 1
+	IdRepeatedWait   time.Duration
 }
 
 type Method string

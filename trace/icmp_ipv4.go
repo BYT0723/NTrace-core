@@ -3,7 +3,6 @@ package trace
 import (
 	"bytes"
 	"encoding/binary"
-	"fmt"
 	"log"
 	"net"
 	"os"
@@ -61,7 +60,7 @@ func (t *ICMPTracer) PrintFunc() {
 }
 
 func (t *ICMPTracer) Execute() (*Result, error) {
-	waitTimer := time.NewTimer(10 * time.Second)
+	waitTimer := time.NewTimer(max(t.IdRepeatedWait, 5*time.Second))
 	t.id = atomic.AddUint32(&idCounter, 1) & 0x3ff
 out:
 	for {
@@ -296,8 +295,6 @@ func (t *ICMPTracer) send(ttl int) error {
 		t.fetchLock.Lock()
 		defer t.fetchLock.Unlock()
 		h.fetchIPData(t.Config)
-
-		fmt.Printf("h: %v\n", h)
 
 		t.res.add(h)
 	case <-time.After(t.Timeout):
