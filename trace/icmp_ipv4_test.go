@@ -21,7 +21,7 @@ func TestICMPIPv4Concurrent(t *testing.T) {
 				MaxHops:          30,
 				NumMeasurements:  3, // 发送几个测试包
 				ParallelRequests: 18,
-				Timeout:          1 * time.Second,
+				Timeout:          time.Second,
 				DestPort:         33434,
 				Quic:             false,
 				RDns:             true,

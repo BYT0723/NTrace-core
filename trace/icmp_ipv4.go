@@ -3,12 +3,10 @@ package trace
 import (
 	"bytes"
 	"encoding/binary"
-	"errors"
 	"fmt"
 	"log"
 	"net"
 	"os"
-	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -63,9 +61,13 @@ func (t *ICMPTracer) PrintFunc() {
 }
 
 func (t *ICMPTracer) Execute() (*Result, error) {
-	t.id = atomic.AddUint32(&idCounter, 1)
-	id2tracer.Store(int64(t.id&0xff), t)
-	defer id2tracer.Delete(int64(t.id & 0xff))
+	t.id = atomic.AddUint32(&idCounter, 1) & 0x3ff
+	if _, load := id2tracer.LoadOrStore(t.id, t); load {
+		return &t.res, ErrRepeatedTracerId
+	}
+
+	id2tracer.Store(t.id, t)
+	defer id2tracer.Delete(t.id)
 
 	if len(t.res.Hops) > 0 {
 		return &t.res, ErrTracerouteExecuted
@@ -88,7 +90,7 @@ func (t *ICMPTracer) Execute() (*Result, error) {
 	t.wg.Add(1)
 	go t.PrintFunc()
 	for ttl := t.BeginHop; ttl <= t.MaxHops; ttl++ {
-		t.inflightRequest.Store(ttl, make(chan *Hop, t.NumMeasurements*10))
+		t.inflightRequest.Store(ttl, make(chan Hop, t.NumMeasurements*10))
 		if t.final != -1 && ttl > t.final {
 			break
 		}
@@ -135,23 +137,23 @@ func (t *ICMPTracer) listenICMP() {
 			}
 
 			var (
-				packet_id string
+				packet_id uint16
 				ttl       int64
 				dstip     net.IP
 			)
 
 			if msg.Msg[0] == 0 {
-				packet_id = strconv.FormatInt(int64(binary.BigEndian.Uint16(msg.Msg[4:6])), 2)
+				packet_id = binary.BigEndian.Uint16(msg.Msg[4:6])
 				ttl = int64(binary.BigEndian.Uint16(msg.Msg[6:8]))
 				dstip = net.ParseIP(msg.Peer.String())
 			} else {
-				packet_id = strconv.FormatInt(int64(binary.BigEndian.Uint16(msg.Msg[32:34])), 2)
+				packet_id = binary.BigEndian.Uint16(msg.Msg[32:34])
 				ttl = int64(binary.BigEndian.Uint16(msg.Msg[34:36]))
 				dstip = net.IP(msg.Msg[24:28])
 			}
 
-			process_id, tracerId, _, err := reverseID(packet_id)
-			if err != nil || process_id != int64(os.Getpid()&0x03) {
+			process_id, tracerId, err := reverseID(packet_id)
+			if err != nil || process_id != uint32(os.Getpid()&1) {
 				continue
 			}
 
@@ -195,8 +197,8 @@ func (t *ICMPTracer) handleICMPMessage(msg ReceivedMessage, icmpType int8, data 
 	mpls := extractMPLS(msg, data, t.Config.PktSize)
 
 	if v, ok := t.inflightRequest.Load(ttl); ok && v != nil {
-		if ch, ok := v.(chan *Hop); ok {
-			ch <- &Hop{
+		if ch, ok := v.(chan Hop); ok {
+			ch <- Hop{
 				Success: true,
 				Address: msg.Peer,
 				MPLS:    mpls,
@@ -205,71 +207,19 @@ func (t *ICMPTracer) handleICMPMessage(msg ReceivedMessage, icmpType int8, data 
 	}
 }
 
-func gernerateID(tracerId uint32, ttl_int int) int {
-	const ID_FIXED_HEADER = "10"
-	processID := fmt.Sprintf("%02b", os.Getpid()&0x03) // 取进程ID的前4位
-	tracer := fmt.Sprintf("%06b", tracerId&0x3f)       // tracerId
-	ttl := fmt.Sprintf("%05b", ttl_int&0x1f)           // ttl
-
-	var parity int
-	id := ID_FIXED_HEADER + processID + tracer + ttl
-	for _, c := range id {
-		if c == '1' {
-			parity++
-		}
-	}
-	if parity%2 == 0 {
-		id += "1"
-	} else {
-		id += "0"
-	}
-
-	res, _ := strconv.ParseInt(id, 2, 32)
-	return int(res)
+func gernerateID(tracerId uint32, ttl_int int, flag_int int) uint16 {
+	var (
+		flag   = uint16(flag_int & 1)      // flag 1bit
+		tracer = uint16(tracerId & 0x03ff) // tracer id 11bit
+		ttl    = uint16(ttl_int & 0x1f)    // ttl index 5bit
+	)
+	id := flag<<15 | tracer<<5 | ttl
+	return id
 }
 
-func reverseID(id string) (processId, tracerId, ttl int64, err error) {
-	if len(id) < 16 {
-		err = errors.New("invalid icmp pkt id")
-		return
-	}
-	// process ID
-	processId, _ = strconv.ParseInt(id[2:4], 2, 32)
-
-	tracerId, err = strconv.ParseInt(id[4:10], 2, 32)
-	if err != nil {
-		err = errors.New("invalid icmp tracerId")
-		return
-	}
-
-	ttl, err = strconv.ParseInt(id[10:15], 2, 32)
-	if err != nil {
-		err = errors.New("invalid icmp ttl")
-		return
-	}
-
-	parity := 0
-	for i := 0; i < len(id)-1; i++ {
-		if id[i] == '1' {
-			parity++
-		}
-	}
-
-	if parity%2 == 1 {
-		if id[len(id)-1] == '0' {
-			// fmt.Println("Parity check passed.")
-		} else {
-			// fmt.Println("Parity check failed.")
-			err = errors.New("Parity check failed.")
-		}
-	} else {
-		if id[len(id)-1] == '1' {
-			// fmt.Println("Parity check passed.")
-		} else {
-			// fmt.Println("Parity check failed.")
-			err = errors.New("Parity check failed.")
-		}
-	}
+func reverseID(id uint16) (flag, tracerId uint32, err error) {
+	flag = uint32(id >> 15 & 1)
+	tracerId = uint32(id >> 5 & 0x03ff)
 	return
 }
 
@@ -279,7 +229,7 @@ func (t *ICMPTracer) send(ttl int) error {
 		return nil
 	}
 
-	id := gernerateID(t.id, ttl)
+	id := gernerateID(t.id, ttl, t.Collector)
 	// log.Println("发送的", id)
 
 	data := []byte{byte(ttl)}
@@ -289,7 +239,7 @@ func (t *ICMPTracer) send(ttl int) error {
 	icmpHeader := icmp.Message{
 		Type: ipv4.ICMPTypeEcho, Code: 0,
 		Body: &icmp.Echo{
-			ID: id,
+			ID: int(id),
 			// Data: []byte("HELLO-R-U-THERE"),
 			Data: data,
 			Seq:  ttl,
@@ -314,7 +264,7 @@ func (t *ICMPTracer) send(ttl int) error {
 	select {
 	case <-t.ctx.Done():
 		return nil
-	case h := <-value.(chan *Hop):
+	case h := <-value.(chan Hop):
 		rtt := time.Since(start)
 		if t.final != -1 && ttl > t.final {
 			return nil
@@ -340,7 +290,9 @@ func (t *ICMPTracer) send(ttl int) error {
 		defer t.fetchLock.Unlock()
 		h.fetchIPData(t.Config)
 
-		t.res.add(*h)
+		fmt.Printf("h: %v\n", h)
+
+		t.res.add(h)
 	case <-time.After(t.Timeout):
 		if t.final != -1 && ttl > t.final {
 			return nil

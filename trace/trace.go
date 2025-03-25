@@ -16,6 +16,7 @@ import (
 
 var (
 	ErrInvalidMethod      = errors.New("invalid method")
+	ErrRepeatedTracerId   = errors.New("repeated tracer id")
 	ErrTracerouteExecuted = errors.New("traceroute already executed")
 	ErrHopLimitTimeout    = errors.New("hop timeout")
 	geoCache              = sync.Map{}
@@ -42,6 +43,7 @@ type Config struct {
 	AsyncPrinter     func(res *Result)
 	PktSize          int
 	Maptrace         bool
+	Collector        int // 0, 1
 }
 
 type Method string

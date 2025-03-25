@@ -5,8 +5,6 @@ import (
 	"encoding/binary"
 	"log"
 	"net"
-	"os"
-	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -174,9 +172,9 @@ func (t *ICMPTracerv6) listenICMP() {
 
 			}
 			ttl := int64(binary.BigEndian.Uint16(msg.Msg[54:56]))
-			packet_id := strconv.FormatInt(int64(binary.BigEndian.Uint16(msg.Msg[52:54])), 2)
-			if process_id, tracerId, _, err := reverseID(packet_id); err == nil {
-				if process_id == int64(os.Getpid()&0x0f) && tracerId == int64(t.id&0x1ff) {
+			packet_id := binary.BigEndian.Uint16(msg.Msg[52:54])
+			if flag, tracerId, err := reverseID(packet_id); err == nil {
+				if flag == uint32(t.Collector&1) && tracerId == t.id {
 					dstip := net.IP(msg.Msg[32:48])
 					// 无效包本地环回包
 					if dstip.String() == "::" {
@@ -262,7 +260,7 @@ func (t *ICMPTracerv6) send(ttl int) error {
 	if t.final != -1 && ttl > t.final {
 		return nil
 	}
-	id := gernerateID(t.id, ttl)
+	id := gernerateID(t.id, ttl, t.Collector)
 
 	data := []byte{byte(ttl)}
 	data = append(data, bytes.Repeat([]byte{1}, t.Config.PktSize-5)...)
@@ -271,7 +269,7 @@ func (t *ICMPTracerv6) send(ttl int) error {
 	icmpHeader := icmp.Message{
 		Type: ipv6.ICMPTypeEchoRequest, Code: 0,
 		Body: &icmp.Echo{
-			ID: id,
+			ID: int(id),
 			// Data: []byte("HELLO-R-U-THERE"),
 			Data: data,
 			Seq:  ttl,
