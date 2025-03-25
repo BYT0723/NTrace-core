@@ -30,9 +30,14 @@ type ICMPTracer struct {
 	id              uint32
 }
 
+const (
+	MaxWaitCount = 256
+)
+
 var (
-	idCounter uint32
-	id2tracer sync.Map // uint32 -> *ICMPTracer
+	idCounter   uint32
+	id2tracer   sync.Map // uint32 -> *ICMPTracer
+	waitCounter atomic.Int32
 )
 
 func (t *ICMPTracer) PrintFunc() {
@@ -60,16 +65,29 @@ func (t *ICMPTracer) PrintFunc() {
 }
 
 func (t *ICMPTracer) Execute() (*Result, error) {
-	waitTimer := time.NewTimer(max(t.IdRepeatedWait, 5*time.Second))
 	t.id = atomic.AddUint32(&idCounter, 1) & 0x3ff
-out:
-	for {
-		select {
-		case <-waitTimer.C:
+	/*
+	* 判断 id 是否重复, 若重复
+	* 1. 判断当前等待Tracer数量是否大于最大等待数量，若大于直接返回错误
+	* 2. 反之，等待IdRepeatedWait时间，若期间id释放则继续，反之则返回错误
+	 */
+	if _, load := id2tracer.LoadOrStore(t.id, t); load {
+		if waitCounter.Load() >= MaxWaitCount {
 			return &t.res, ErrRepeatedTracerId
-		default:
-			if _, load := id2tracer.LoadOrStore(t.id, t); !load {
-				break out
+		}
+		waitTimer := time.NewTimer(max(t.IdRepeatedWait, 5*time.Second))
+		waitCounter.Add(1)
+	out:
+		for {
+			select {
+			case <-waitTimer.C:
+				return &t.res, ErrRepeatedTracerId
+			default:
+				if _, load := id2tracer.LoadOrStore(t.id, t); !load {
+					waitCounter.Add(-1)
+					break out
+				}
+				time.Sleep(100 * time.Millisecond)
 			}
 		}
 	}
