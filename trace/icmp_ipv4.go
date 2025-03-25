@@ -3,6 +3,7 @@ package trace
 import (
 	"bytes"
 	"encoding/binary"
+	"fmt"
 	"log"
 	"net"
 	"os"
@@ -60,12 +61,19 @@ func (t *ICMPTracer) PrintFunc() {
 }
 
 func (t *ICMPTracer) Execute() (*Result, error) {
+	waitTimer := time.NewTimer(10 * time.Second)
 	t.id = atomic.AddUint32(&idCounter, 1) & 0x3ff
-	if _, load := id2tracer.LoadOrStore(t.id, t); load {
-		return &t.res, ErrRepeatedTracerId
+out:
+	for {
+		select {
+		case <-waitTimer.C:
+			return &t.res, ErrRepeatedTracerId
+		default:
+			if _, load := id2tracer.LoadOrStore(t.id, t); !load {
+				break out
+			}
+		}
 	}
-
-	id2tracer.Store(t.id, t)
 	defer id2tracer.Delete(t.id)
 
 	if len(t.res.Hops) > 0 {
@@ -288,6 +296,8 @@ func (t *ICMPTracer) send(ttl int) error {
 		t.fetchLock.Lock()
 		defer t.fetchLock.Unlock()
 		h.fetchIPData(t.Config)
+
+		fmt.Printf("h: %v\n", h)
 
 		t.res.add(h)
 	case <-time.After(t.Timeout):
