@@ -10,11 +10,10 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/BYT0723/NTrace-core/trace/internal"
 	"golang.org/x/net/context"
 	"golang.org/x/net/icmp"
 	"golang.org/x/net/ipv4"
-
-	"github.com/BYT0723/NTrace-core/trace/internal"
 )
 
 type ICMPTracer struct {
@@ -23,7 +22,6 @@ type ICMPTracer struct {
 	res             Result
 	ctx             context.Context
 	inflightRequest sync.Map
-	icmpListen      net.PacketConn
 	final           int
 	finalLock       sync.Mutex
 	fetchLock       sync.Mutex
@@ -31,13 +29,15 @@ type ICMPTracer struct {
 }
 
 const (
-	MaxWaitCount = 256
+	MaxWaitCount = 1 << 8
 )
 
 var (
 	idCounter   uint32
 	id2tracer   sync.Map // uint32 -> *ICMPTracer
 	waitCounter atomic.Int32
+	listenInit  sync.Once
+	listener    net.PacketConn
 )
 
 func (t *ICMPTracer) PrintFunc() {
@@ -65,6 +65,9 @@ func (t *ICMPTracer) PrintFunc() {
 }
 
 func (t *ICMPTracer) Execute() (*Result, error) {
+	listenInit.Do(func() {
+		listenICMP(context.Background())
+	})
 	t.id = atomic.AddUint32(&idCounter, 1) & 0x3ff
 	/*
 	* 判断 id 是否重复, 若重复
@@ -97,20 +100,11 @@ func (t *ICMPTracer) Execute() (*Result, error) {
 		return &t.res, ErrTracerouteExecuted
 	}
 
-	var err error
-
-	t.icmpListen, err = internal.ListenICMP("ip4:1", t.SrcAddr)
-	if err != nil {
-		return &t.res, err
-	}
-	defer t.icmpListen.Close()
-
 	var cancel context.CancelFunc
 	t.ctx, cancel = context.WithCancel(context.Background())
 	defer cancel()
 	t.final = -1
 
-	go t.listenICMP()
 	t.wg.Add(1)
 	go t.PrintFunc()
 	for ttl := t.BeginHop; ttl <= t.MaxHops; ttl++ {
@@ -148,67 +142,78 @@ func (t *ICMPTracer) Execute() (*Result, error) {
 	return &t.res, nil
 }
 
-func (t *ICMPTracer) listenICMP() {
-	lc := NewPacketListener(t.icmpListen, t.ctx)
+func listenICMP(ctx context.Context) {
+	var err error
+
+	for listener == nil {
+		listener, err = internal.ListenICMP("ip4:1", "")
+		if err != nil {
+			time.Sleep(time.Second)
+			continue
+		}
+	}
+	lc := NewPacketListener(listener, ctx)
 	go lc.Start()
-	for {
-		select {
-		case <-t.ctx.Done():
-			return
-		case msg := <-lc.Messages:
-			if msg.N == nil {
-				continue
-			}
-
-			var (
-				packet_id uint16
-				ttl       int64
-				dstip     net.IP
-			)
-
-			if msg.Msg[0] == 0 {
-				packet_id = binary.BigEndian.Uint16(msg.Msg[4:6])
-				ttl = int64(binary.BigEndian.Uint16(msg.Msg[6:8]))
-				dstip = net.ParseIP(msg.Peer.String())
-			} else {
-				packet_id = binary.BigEndian.Uint16(msg.Msg[32:34])
-				ttl = int64(binary.BigEndian.Uint16(msg.Msg[34:36]))
-				dstip = net.IP(msg.Msg[24:28])
-			}
-
-			process_id, tracerId, err := reverseID(packet_id)
-			if err != nil || process_id != uint32(os.Getpid()&1) {
-				continue
-			}
-
-			value, ok := id2tracer.Load(tracerId)
-			if !ok {
-				continue
-			}
-			rt := value.(*ICMPTracer) // real tracer
-
-			if dstip.Equal(rt.DestIP) || dstip.Equal(net.IPv4zero) {
-				// 匹配再继续解析包，否则直接丢弃
-				rm, err := icmp.ParseMessage(1, msg.Msg[:*msg.N])
-				if err != nil {
-					log.Println(err)
+	go func() {
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case msg := <-lc.Messages:
+				if msg.N == nil {
 					continue
 				}
 
-				switch rm.Type {
-				case ipv4.ICMPTypeTimeExceeded:
-					rt.handleICMPMessage(msg, 0, rm.Body.(*icmp.TimeExceeded).Data, int(ttl))
-				case ipv4.ICMPTypeEchoReply:
-					rt.handleICMPMessage(msg, 1, rm.Body.(*icmp.Echo).Data, int(ttl))
-				// unreachable
-				case ipv4.ICMPTypeDestinationUnreachable:
-					rt.handleICMPMessage(msg, 2, rm.Body.(*icmp.DstUnreach).Data, int(ttl))
-				default:
-					// log.Println("received icmp message of unknown type", rm.Type)
+				var (
+					packet_id uint16
+					ttl       int64
+					dstip     net.IP
+				)
+
+				if msg.Msg[0] == 0 {
+					packet_id = binary.BigEndian.Uint16(msg.Msg[4:6])
+					ttl = int64(binary.BigEndian.Uint16(msg.Msg[6:8]))
+					dstip = net.ParseIP(msg.Peer.String())
+				} else {
+					packet_id = binary.BigEndian.Uint16(msg.Msg[32:34])
+					ttl = int64(binary.BigEndian.Uint16(msg.Msg[34:36]))
+					dstip = net.IP(msg.Msg[24:28])
+				}
+
+				process_id, tracerId, err := reverseID(packet_id)
+				if err != nil || process_id != uint32(os.Getpid()&1) {
+					continue
+				}
+
+				value, ok := id2tracer.Load(tracerId)
+				if !ok {
+					continue
+				}
+				rt := value.(*ICMPTracer) // real tracer
+
+				if dstip.Equal(rt.DestIP) || dstip.Equal(net.IPv4zero) {
+					// 匹配再继续解析包，否则直接丢弃
+					rm, err := icmp.ParseMessage(1, msg.Msg[:*msg.N])
+					if err != nil {
+						log.Println(err)
+						continue
+					}
+
+					switch rm.Type {
+					case ipv4.ICMPTypeTimeExceeded:
+						rt.handleICMPMessage(msg, 0, rm.Body.(*icmp.TimeExceeded).Data, int(ttl))
+					case ipv4.ICMPTypeEchoReply:
+						rt.handleICMPMessage(msg, 1, rm.Body.(*icmp.Echo).Data, int(ttl))
+					// unreachable
+					case ipv4.ICMPTypeDestinationUnreachable:
+						rt.handleICMPMessage(msg, 2, rm.Body.(*icmp.DstUnreach).Data, int(ttl))
+					default:
+						// log.Println("received icmp message of unknown type", rm.Type)
+					}
 				}
 			}
 		}
-	}
+	}()
 }
 
 func (t *ICMPTracer) handleICMPMessage(msg ReceivedMessage, icmpType int8, data []byte, ttl int) {
@@ -270,7 +275,7 @@ func (t *ICMPTracer) send(ttl int) error {
 		},
 	}
 
-	ipv4.NewPacketConn(t.icmpListen).SetTTL(ttl)
+	ipv4.NewPacketConn(listener).SetTTL(ttl)
 
 	wb, err := icmpHeader.Marshal(nil)
 	if err != nil {
@@ -278,10 +283,7 @@ func (t *ICMPTracer) send(ttl int) error {
 	}
 
 	start := time.Now()
-	if _, err := t.icmpListen.WriteTo(wb, &net.IPAddr{IP: t.DestIP}); err != nil {
-		panic(err)
-	}
-	if err := t.icmpListen.SetReadDeadline(time.Now().Add(3 * time.Second)); err != nil {
+	if _, err := listener.WriteTo(wb, &net.IPAddr{IP: t.DestIP}); err != nil {
 		panic(err)
 	}
 	value, _ := t.inflightRequest.Load(ttl)

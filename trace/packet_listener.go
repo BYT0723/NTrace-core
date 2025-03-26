@@ -21,7 +21,7 @@ type PacketListener struct {
 }
 
 func NewPacketListener(conn net.PacketConn, ctx context.Context) *PacketListener {
-	results := make(chan ReceivedMessage, 50)
+	results := make(chan ReceivedMessage, 1<<10)
 
 	return &PacketListener{Conn: conn, ctx: ctx, Messages: results}
 }
