@@ -33,11 +33,12 @@ const (
 )
 
 var (
-	idCounter   uint32
-	id2tracer   sync.Map // uint32 -> *ICMPTracer
-	waitCounter atomic.Int32
-	listenInit  sync.Once
-	listener    net.PacketConn
+	idCounter        uint32
+	id2tracer        sync.Map // uint32 -> *ICMPTracer
+	waitCounter      atomic.Int32
+	listenInit       sync.Once
+	listenerTTLMutex sync.Mutex
+	listener         net.PacketConn
 )
 
 func (t *ICMPTracer) PrintFunc() {
@@ -275,17 +276,18 @@ func (t *ICMPTracer) send(ttl int) error {
 		},
 	}
 
-	ipv4.NewPacketConn(listener).SetTTL(ttl)
-
 	wb, err := icmpHeader.Marshal(nil)
 	if err != nil {
-		panic(err)
+		return err
 	}
 
+	listenerTTLMutex.Lock()
+	ipv4.NewPacketConn(listener).SetTTL(ttl)
 	start := time.Now()
 	if _, err := listener.WriteTo(wb, &net.IPAddr{IP: t.DestIP}); err != nil {
-		panic(err)
+		return err
 	}
+	listenerTTLMutex.Unlock()
 	value, _ := t.inflightRequest.Load(ttl)
 	select {
 	case <-t.ctx.Done():
