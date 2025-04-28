@@ -41,7 +41,6 @@ var (
 )
 
 func (t *ICMPTracer) PrintFunc() {
-	defer t.wg.Done()
 	ttl := t.Config.BeginHop - 1
 	for {
 		if t.AsyncPrinter != nil {
@@ -105,8 +104,8 @@ func (t *ICMPTracer) Execute() (*Result, error) {
 	defer cancel()
 	t.final = -1
 
-	t.wg.Add(1)
 	go t.PrintFunc()
+
 	for ttl := t.BeginHop; ttl <= t.MaxHops; ttl++ {
 		t.inflightRequest.Store(ttl, make(chan Hop, t.NumMeasurements*10))
 		if t.final != -1 && ttl > t.final {
