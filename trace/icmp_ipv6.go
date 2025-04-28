@@ -260,7 +260,7 @@ func (t *ICMPTracerv6) send(ttl int) error {
 	if t.final != -1 && ttl > t.final {
 		return nil
 	}
-	id := gernerateID(t.id, ttl, t.Collector)
+	id := generateID(t.id, ttl, t.Collector)
 
 	data := []byte{byte(ttl)}
 	data = append(data, bytes.Repeat([]byte{1}, t.Config.PktSize-5)...)

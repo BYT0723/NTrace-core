@@ -5,7 +5,6 @@ import (
 	"encoding/binary"
 	"log"
 	"net"
-	"os"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -67,7 +66,7 @@ func (t *ICMPTracer) PrintFunc() {
 
 func (t *ICMPTracer) Execute() (*Result, error) {
 	listenInit.Do(func() {
-		listenICMP(context.Background())
+		t.listenICMP(context.Background())
 	})
 	t.id = atomic.AddUint32(&idCounter, 1) & 0x3ff
 	/*
@@ -143,7 +142,7 @@ func (t *ICMPTracer) Execute() (*Result, error) {
 	return &t.res, nil
 }
 
-func listenICMP(ctx context.Context) {
+func (t *ICMPTracer) listenICMP(ctx context.Context) {
 	var err error
 
 	for listener == nil {
@@ -181,8 +180,8 @@ func listenICMP(ctx context.Context) {
 					dstip = net.IP(msg.Msg[24:28])
 				}
 
-				process_id, tracerId, err := reverseID(packet_id)
-				if err != nil || process_id != uint32(os.Getpid()&1) {
+				flag, tracerId, err := reverseID(packet_id)
+				if err != nil || flag != uint32(t.Collector&1) {
 					continue
 				}
 
@@ -237,7 +236,7 @@ func (t *ICMPTracer) handleICMPMessage(msg ReceivedMessage, icmpType int8, data 
 	}
 }
 
-func gernerateID(tracerId uint32, ttl_int int, flag_int int) uint16 {
+func generateID(tracerId uint32, ttl_int int, flag_int int) uint16 {
 	var (
 		flag   = uint16(flag_int & 1)      // flag 1bit
 		tracer = uint16(tracerId & 0x03ff) // tracer id 11bit
@@ -259,7 +258,7 @@ func (t *ICMPTracer) send(ttl int) error {
 		return nil
 	}
 
-	id := gernerateID(t.id, ttl, t.Collector)
+	id := generateID(t.id, ttl, t.Collector)
 	// log.Println("发送的", id)
 
 	data := []byte{byte(ttl)}
