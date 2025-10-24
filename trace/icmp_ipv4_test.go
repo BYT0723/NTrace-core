@@ -34,7 +34,7 @@ func TestICMPIPv4Concurrent(t *testing.T) {
 				AsyncPrinter:     nil,
 				PktSize:          60,
 				Maptrace:         false,
-				DestIP:           net.IPv4(8, 8, 8, 8),
+				DestIP:           net.IPv4(192, 168, 20, 254),
 			}}
 			r2, err := tracer.Execute()
 			if err != nil {

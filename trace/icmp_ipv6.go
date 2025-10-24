@@ -6,7 +6,6 @@ import (
 	"log"
 	"net"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"golang.org/x/net/context"
@@ -57,7 +56,15 @@ func (t *ICMPTracerv6) PrintFunc() {
 }
 
 func (t *ICMPTracerv6) Execute() (*Result, error) {
-	t.id = atomic.AddUint32(&idCounter, 1)
+	select {
+	case t.id = <-idPool:
+	case <-time.After(t.IdRepeatedWait):
+		return &t.res, ErrRepeatedTracerId
+	}
+	defer func() {
+		idPool <- t.id
+	}()
+
 	t.inflightRequestRWLock.Lock()
 	t.inflightRequest = make(map[int]chan Hop)
 	t.inflightRequestRWLock.Unlock()

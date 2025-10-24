@@ -4,9 +4,9 @@ import (
 	"bytes"
 	"encoding/binary"
 	"log"
+	"math"
 	"net"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/BYT0723/NTrace-core/trace/internal"
@@ -27,18 +27,21 @@ type ICMPTracer struct {
 	id              uint32
 }
 
-const (
-	MaxWaitCount = 1 << 8
-)
-
 var (
-	idCounter        uint32
+	idPool           chan uint32
 	id2tracer        sync.Map // uint32 -> *ICMPTracer
-	waitCounter      atomic.Int32
 	listenInit       sync.Once
 	listenerTTLMutex sync.Mutex
 	listener         net.PacketConn
 )
+
+func init() {
+	n := math.MaxUint32 & 0x3ff
+	idPool = make(chan uint32, n)
+	for i := range n {
+		idPool <- uint32(i)
+	}
+}
 
 func (t *ICMPTracer) PrintFunc() {
 	ttl := t.Config.BeginHop - 1
@@ -67,33 +70,17 @@ func (t *ICMPTracer) Execute() (*Result, error) {
 	listenInit.Do(func() {
 		t.listenICMP(context.Background())
 	})
-	t.id = atomic.AddUint32(&idCounter, 1) & 0x3ff
-	/*
-	* 判断 id 是否重复, 若重复
-	* 1. 判断当前等待Tracer数量是否大于最大等待数量，若大于直接返回错误
-	* 2. 反之，等待IdRepeatedWait时间，若期间id释放则继续，反之则返回错误
-	 */
-	if _, load := id2tracer.LoadOrStore(t.id, t); load {
-		if waitCounter.Load() >= MaxWaitCount {
-			return &t.res, ErrRepeatedTracerId
-		}
-		waitTimer := time.NewTimer(max(t.IdRepeatedWait, 5*time.Second))
-		waitCounter.Add(1)
-	out:
-		for {
-			select {
-			case <-waitTimer.C:
-				return &t.res, ErrRepeatedTracerId
-			default:
-				if _, load := id2tracer.LoadOrStore(t.id, t); !load {
-					waitCounter.Add(-1)
-					break out
-				}
-				time.Sleep(100 * time.Millisecond)
-			}
-		}
+	select {
+	case t.id = <-idPool:
+	case <-time.After(t.IdRepeatedWait):
+		return &t.res, ErrRepeatedTracerId
 	}
-	defer id2tracer.Delete(t.id)
+	id2tracer.Store(t.id, t)
+
+	defer func() {
+		idPool <- t.id
+		id2tracer.Delete(t.id)
+	}()
 
 	if len(t.res.Hops) > 0 {
 		return &t.res, ErrTracerouteExecuted
@@ -248,7 +235,7 @@ func generateID(tracerId uint32, ttl_int int, flag_int int) uint16 {
 func reverseID(id uint16) (flag, tracerId uint32, err error) {
 	flag = uint32(id >> 15 & 1)
 	tracerId = uint32(id >> 5 & 0x03ff)
-	return
+	return flag, tracerId, err
 }
 
 func (t *ICMPTracer) send(ttl int) error {
