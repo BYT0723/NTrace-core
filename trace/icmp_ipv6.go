@@ -180,31 +180,29 @@ func (t *ICMPTracerv6) listenICMP() {
 			}
 			ttl := int64(binary.BigEndian.Uint16(msg.Msg[54:56]))
 			packet_id := binary.BigEndian.Uint16(msg.Msg[52:54])
-			if flag, tracerId, err := reverseID(packet_id); err == nil {
-				if flag == uint32(t.Collector&1) && tracerId == t.id {
-					dstip := net.IP(msg.Msg[32:48])
-					// 无效包本地环回包
-					if dstip.String() == "::" {
+			if flag, tracerId := reverseID(packet_id); flag == uint32(t.Collector&1) && tracerId == t.id {
+				dstip := net.IP(msg.Msg[32:48])
+				// 无效包本地环回包
+				if dstip.String() == "::" {
+					continue
+				}
+				if dstip.Equal(t.DestIP) || dstip.Equal(net.IPv6zero) {
+					// 匹配再继续解析包，否则直接丢弃
+					rm, err := icmp.ParseMessage(58, msg.Msg[:*msg.N])
+					if err != nil {
+						log.Println(err)
 						continue
 					}
-					if dstip.Equal(t.DestIP) || dstip.Equal(net.IPv6zero) {
-						// 匹配再继续解析包，否则直接丢弃
-						rm, err := icmp.ParseMessage(58, msg.Msg[:*msg.N])
-						if err != nil {
-							log.Println(err)
-							continue
-						}
 
-						switch rm.Type {
-						case ipv6.ICMPTypeTimeExceeded:
-							t.handleICMPMessage(msg, 0, rm.Body.(*icmp.TimeExceeded).Data, int(ttl))
-						case ipv6.ICMPTypeEchoReply:
-							t.handleICMPMessage(msg, 1, rm.Body.(*icmp.Echo).Data, int(ttl))
-						case ipv6.ICMPTypeDestinationUnreachable:
-							t.handleICMPMessage(msg, 2, rm.Body.(*icmp.DstUnreach).Data, int(ttl))
-						default:
-							// log.Println("received icmp message of unknown type", rm.Type)
-						}
+					switch rm.Type {
+					case ipv6.ICMPTypeTimeExceeded:
+						t.handleICMPMessage(msg, 0, rm.Body.(*icmp.TimeExceeded).Data, int(ttl))
+					case ipv6.ICMPTypeEchoReply:
+						t.handleICMPMessage(msg, 1, rm.Body.(*icmp.Echo).Data, int(ttl))
+					case ipv6.ICMPTypeDestinationUnreachable:
+						t.handleICMPMessage(msg, 2, rm.Body.(*icmp.DstUnreach).Data, int(ttl))
+					default:
+						// log.Println("received icmp message of unknown type", rm.Type)
 					}
 				}
 			}
@@ -267,7 +265,7 @@ func (t *ICMPTracerv6) send(ttl int) error {
 	if t.final != -1 && ttl > t.final {
 		return nil
 	}
-	id := generateID(t.id, ttl, t.Collector)
+	id := generateID(t.id, t.Collector)
 
 	data := []byte{byte(ttl)}
 	data = append(data, bytes.Repeat([]byte{1}, t.Config.PktSize-5)...)

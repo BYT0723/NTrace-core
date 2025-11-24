@@ -12,6 +12,7 @@ func TestICMPIPv4Concurrent(t *testing.T) {
 	var wg sync.WaitGroup
 
 	for i := range 10 {
+		time.Sleep(time.Second)
 		wg.Add(1)
 		go func(index int) {
 			defer wg.Done()
@@ -21,7 +22,7 @@ func TestICMPIPv4Concurrent(t *testing.T) {
 				MaxHops:          30,
 				NumMeasurements:  3, // 发送几个测试包
 				ParallelRequests: 18,
-				Timeout:          5 * time.Second,
+				Timeout:          time.Second,
 				DestPort:         33434,
 				Quic:             false,
 				RDns:             true,
@@ -34,7 +35,7 @@ func TestICMPIPv4Concurrent(t *testing.T) {
 				AsyncPrinter:     nil,
 				PktSize:          60,
 				Maptrace:         false,
-				DestIP:           net.IPv4(192, 168, 20, 254),
+				DestIP:           net.IPv4(223, 5, 5, 5),
 			}}
 			r2, err := tracer.Execute()
 			if err != nil {

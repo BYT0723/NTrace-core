@@ -20,7 +20,8 @@ type ICMPTracer struct {
 	wg              sync.WaitGroup
 	res             Result
 	ctx             context.Context
-	inflightRequest sync.Map
+	cf              context.CancelFunc
+	inflightRequest []chan Hop
 	final           int
 	finalLock       sync.Mutex
 	fetchLock       sync.Mutex
@@ -28,19 +29,22 @@ type ICMPTracer struct {
 }
 
 var (
-	idPool           chan uint32
-	id2tracer        sync.Map // uint32 -> *ICMPTracer
-	listenInit       sync.Once
-	listenerTTLMutex sync.Mutex
-	listener         net.PacketConn
+	idPool         chan uint32
+	id2tracer      map[uint32]*ICMPTracer
+	id2tracerMutex sync.Mutex
+
+	listenInit    sync.Once
+	listenerMutex sync.Mutex
+	listener      net.PacketConn
 )
 
 func init() {
-	n := math.MaxUint32 & 0x3ff
+	n := math.MaxUint32 & 0x7fff
 	idPool = make(chan uint32, n)
 	for i := range n {
 		idPool <- uint32(i)
 	}
+	id2tracer = make(map[uint32]*ICMPTracer)
 }
 
 func (t *ICMPTracer) PrintFunc() {
@@ -70,31 +74,39 @@ func (t *ICMPTracer) Execute() (*Result, error) {
 	listenInit.Do(func() {
 		t.listenICMP(context.Background())
 	})
+
+	// 生成 id
 	select {
 	case t.id = <-idPool:
 	case <-time.After(t.IdRepeatedWait):
 		return &t.res, ErrRepeatedTracerId
 	}
-	id2tracer.Store(t.id, t)
+
+	// 保存
+	id2tracerMutex.Lock()
+	id2tracer[t.id] = t
+	id2tracerMutex.Unlock()
 
 	defer func() {
 		idPool <- t.id
-		id2tracer.Delete(t.id)
+		id2tracerMutex.Lock()
+		delete(id2tracer, t.id)
+		id2tracerMutex.Unlock()
 	}()
 
 	if len(t.res.Hops) > 0 {
 		return &t.res, ErrTracerouteExecuted
 	}
 
-	var cancel context.CancelFunc
-	t.ctx, cancel = context.WithCancel(context.Background())
-	defer cancel()
+	t.ctx, t.cf = context.WithCancel(context.Background())
+	defer t.cf()
 	t.final = -1
+	t.inflightRequest = make([]chan Hop, t.MaxHops)
 
 	go t.PrintFunc()
 
 	for ttl := t.BeginHop; ttl <= t.MaxHops; ttl++ {
-		t.inflightRequest.Store(ttl, make(chan Hop, t.NumMeasurements*10))
+		t.inflightRequest[ttl-1] = make(chan Hop, t.NumMeasurements)
 		if t.final != -1 && ttl > t.final {
 			break
 		}
@@ -166,16 +178,17 @@ func (t *ICMPTracer) listenICMP(ctx context.Context) {
 					dstip = net.IP(msg.Msg[24:28])
 				}
 
-				flag, tracerId, err := reverseID(packet_id)
-				if err != nil || flag != uint32(t.Collector&1) {
+				flag, tracerId := reverseID(packet_id)
+				if flag != uint32(t.Collector&1) {
 					continue
 				}
 
-				value, ok := id2tracer.Load(tracerId)
+				id2tracerMutex.Lock()
+				rt, ok := id2tracer[tracerId]
+				id2tracerMutex.Unlock()
 				if !ok {
 					continue
 				}
-				rt := value.(*ICMPTracer) // real tracer
 
 				if dstip.Equal(rt.DestIP) || dstip.Equal(net.IPv4zero) {
 					// 匹配再继续解析包，否则直接丢弃
@@ -211,31 +224,26 @@ func (t *ICMPTracer) handleICMPMessage(msg ReceivedMessage, icmpType int8, data 
 
 	mpls := extractMPLS(msg, data, t.Config.PktSize)
 
-	if v, ok := t.inflightRequest.Load(ttl); ok && v != nil {
-		if ch, ok := v.(chan Hop); ok {
-			ch <- Hop{
-				Success: true,
-				Address: msg.Peer,
-				MPLS:    mpls,
-			}
-		}
+	t.inflightRequest[ttl-1] <- Hop{
+		Success: true,
+		Address: msg.Peer,
+		MPLS:    mpls,
 	}
 }
 
-func generateID(tracerId uint32, ttl_int int, flag_int int) uint16 {
+func generateID(tracerId uint32, flag_int int) uint16 {
 	var (
 		flag   = uint16(flag_int & 1)      // flag 1bit
-		tracer = uint16(tracerId & 0x03ff) // tracer id 11bit
-		ttl    = uint16(ttl_int & 0x1f)    // ttl index 5bit
+		tracer = uint16(tracerId & 0x7fff) // tracer id 11bit
 	)
-	id := flag<<15 | tracer<<5 | ttl
+	id := flag<<15 | tracer
 	return id
 }
 
-func reverseID(id uint16) (flag, tracerId uint32, err error) {
+func reverseID(id uint16) (flag, tracerId uint32) {
 	flag = uint32(id >> 15 & 1)
-	tracerId = uint32(id >> 5 & 0x03ff)
-	return flag, tracerId, err
+	tracerId = uint32(id & 0x7fff)
+	return flag, tracerId
 }
 
 func (t *ICMPTracer) send(ttl int) error {
@@ -244,7 +252,7 @@ func (t *ICMPTracer) send(ttl int) error {
 		return nil
 	}
 
-	id := generateID(t.id, ttl, t.Collector)
+	id := generateID(t.id, t.Collector)
 	// log.Println("发送的", id)
 
 	data := []byte{byte(ttl)}
@@ -254,8 +262,7 @@ func (t *ICMPTracer) send(ttl int) error {
 	icmpHeader := icmp.Message{
 		Type: ipv4.ICMPTypeEcho, Code: 0,
 		Body: &icmp.Echo{
-			ID: int(id),
-			// Data: []byte("HELLO-R-U-THERE"),
+			ID:   int(id),
 			Data: data,
 			Seq:  ttl,
 		},
@@ -266,18 +273,18 @@ func (t *ICMPTracer) send(ttl int) error {
 		return err
 	}
 
-	listenerTTLMutex.Lock()
+	listenerMutex.Lock()
 	ipv4.NewPacketConn(listener).SetTTL(ttl)
 	start := time.Now()
 	if _, err := listener.WriteTo(wb, &net.IPAddr{IP: t.DestIP}); err != nil {
 		return err
 	}
-	listenerTTLMutex.Unlock()
-	value, _ := t.inflightRequest.Load(ttl)
+	listenerMutex.Unlock()
+
 	select {
 	case <-t.ctx.Done():
 		return nil
-	case h := <-value.(chan Hop):
+	case h := <-t.inflightRequest[ttl-1]:
 		rtt := time.Since(start)
 		if t.final != -1 && ttl > t.final {
 			return nil
